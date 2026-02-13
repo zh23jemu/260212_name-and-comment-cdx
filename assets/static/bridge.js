@@ -156,13 +156,93 @@
     }
   }
 
-  var classOverrideDone = false;
-  async function runClassPageOverride() {
-    if (classOverrideDone || !detectClassManagementPage() || !API_BASE) {
+  var classState = {
+    initialized: false,
+    classes: [],
+    tbody: null
+  };
+
+  function normalizeText(v) {
+    return String(v || '').replace(/\s+/g, '').trim();
+  }
+
+  function resolveClassFromCard(card, index) {
+    var classes = classState.classes;
+    if (!classes.length) {
+      return null;
+    }
+
+    var cardText = normalizeText(card ? card.innerText : '');
+    for (var i = 0; i < classes.length; i += 1) {
+      var cname = normalizeText(classes[i].name);
+      if (cname && cardText.indexOf(cname) >= 0) {
+        return classes[i];
+      }
+    }
+
+    var m = cardText.match(/(\d+)班/);
+    if (m) {
+      for (var j = 0; j < classes.length; j += 1) {
+        var n = normalizeText(classes[j].name);
+        if (n.indexOf(m[1] + '班') >= 0 || n.indexOf('(' + m[1] + ')班') >= 0) {
+          return classes[j];
+        }
+      }
+    }
+
+    return classes[index] || classes[0];
+  }
+
+  function bindClassSwitchHandler() {
+    if (document.body.getAttribute('data-db-class-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-class-bound', '1');
+
+    document.body.addEventListener('click', function (event) {
+      if (!detectClassManagementPage() || !classState.initialized) {
+        return;
+      }
+      var card = event.target.closest('div.p-4.rounded-xl.border-2.cursor-pointer');
+      if (!card) {
+        return;
+      }
+
+      var cards = Array.prototype.slice.call(document.querySelectorAll('div.p-4.rounded-xl.border-2.cursor-pointer'));
+      var idx = cards.indexOf(card);
+      var cls = resolveClassFromCard(card, idx >= 0 ? idx : 0);
+      if (!cls) {
+        return;
+      }
+      loadStudentsByClass(cls);
+    }, true);
+  }
+
+  async function loadStudentsByClass(cls) {
+    if (!cls || !classState.tbody) {
       return;
     }
 
-    var tbody = getStudentTableBody();
+    var sRes = await fetch(API_BASE + '/api/classes/' + cls.id + '/students');
+    if (!sRes.ok) {
+      return;
+    }
+    var students = await sRes.json();
+    renderStudents(classState.tbody, students);
+    updateStudentCount(Array.isArray(students) ? students.length : 0);
+
+    var title = document.querySelector('h2.text-3xl');
+    if (title && cls.name) {
+      title.textContent = cls.name;
+    }
+  }
+
+  async function runClassPageOverride() {
+    if (!detectClassManagementPage() || !API_BASE) {
+      return;
+    }
+
+    var tbody = getStudentTableBody() || classState.tbody;
     if (!tbody) {
       return;
     }
@@ -176,18 +256,18 @@
       if (!Array.isArray(classes) || !classes.length) {
         renderStudents(tbody, []);
         updateStudentCount(0);
-        classOverrideDone = true;
+        classState.initialized = true;
+        classState.classes = [];
+        classState.tbody = tbody;
+        bindClassSwitchHandler();
         return;
       }
 
-      var sRes = await fetch(API_BASE + '/api/classes/' + classes[0].id + '/students');
-      if (!sRes.ok) {
-        return;
-      }
-      var students = await sRes.json();
-      renderStudents(tbody, students);
-      updateStudentCount(Array.isArray(students) ? students.length : 0);
-      classOverrideDone = true;
+      classState.classes = classes;
+      classState.tbody = tbody;
+      classState.initialized = true;
+      bindClassSwitchHandler();
+      await loadStudentsByClass(classes[0]);
     } catch (_) {}
   }
 
@@ -214,6 +294,7 @@
   mirrorWholeStorage();
   setTimeout(function () { runClassPageOverride(); }, 900);
   setTimeout(function () { runClassPageOverride(); }, 2200);
+  setTimeout(function () { runClassPageOverride(); }, 3800);
 
   window.sqliteBridge = {
     namespace: NAMESPACE,
