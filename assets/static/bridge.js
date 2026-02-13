@@ -303,22 +303,45 @@
 
     for (var i = 0; i < teachers.length; i += 1) {
       var t = teachers[i];
-      var created = String(t.createdAt || '').replace('T', ' ').replace('Z', '');
-      var tr = document.createElement('tr');
-      tr.className = 'transition-colors data-[state=selected]:bg-muted border-b border-indigo-50';
-      tr.innerHTML =
-        '<td class="p-4 align-middle font-medium text-indigo-900">' + (t.username || '-') + '</td>' +
-        '<td class="p-4 align-middle">' + (t.name || '-') + '</td>' +
-        '<td class="p-4 align-middle">' + (t.role === 'admin' ? '管理员' : '教师') + '</td>' +
-        '<td class="p-4 align-middle text-slate-500">--</td>' +
-        '<td class="p-4 align-middle text-slate-500">' + (created || '-') + '</td>' +
-        '<td class="p-4 align-middle text-right">' +
-          '<button type="button" class="delete-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-rose-500 hover:bg-rose-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="删除教师">' +
+      var created = String(t.createdAt || '').slice(0, 10);
+      var roleBadge = t.role === 'admin'
+        ? '<span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600">管理员</span>'
+        : '<span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold text-indigo-700 bg-indigo-100">教师</span>';
+      var deleteBtn = t.role === 'admin'
+        ? ''
+        : '<button type="button" class="delete-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-rose-500 hover:bg-rose-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="删除教师">' +
             '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>' +
+          '</button>';
+      var tr = document.createElement('tr');
+      tr.className = 'transition-colors border-b border-indigo-50 hover:bg-indigo-50/20';
+      tr.innerHTML =
+        '<td class="p-4 align-middle font-semibold text-indigo-700">' + (t.username || '-') + '</td>' +
+        '<td class="p-4 align-middle font-semibold text-slate-900">' + (t.name || '-') + '</td>' +
+        '<td class="p-4 align-middle">' + roleBadge + '</td>' +
+        '<td class="p-4 align-middle text-slate-400 font-medium">尚未分配</td>' +
+        '<td class="p-4 align-middle text-slate-400 font-semibold">' + (created || '-') + '</td>' +
+        '<td class="p-4 align-middle text-right">' +
+          '<div class="inline-flex items-center justify-end gap-2 whitespace-nowrap">' +
+          '<button type="button" class="perm-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-amber-600 hover:bg-amber-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="管理权限">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="m9 12 2 2 4-4"></path></svg>' +
           '</button>' +
+          '<button type="button" class="edit-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-indigo-600 hover:bg-indigo-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="编辑基本信息">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>' +
+          '</button>' +
+          deleteBtn +
+          '</div>' +
         '</td>';
       tbody.appendChild(tr);
     }
+  }
+
+  function findTeacherById(teacherId) {
+    for (var i = 0; i < teacherState.teachers.length; i += 1) {
+      if (Number(teacherState.teachers[i].id) === Number(teacherId)) {
+        return teacherState.teachers[i];
+      }
+    }
+    return null;
   }
 
   async function runTeacherPageOverride() {
@@ -484,6 +507,94 @@
         await runTeacherPageOverride();
       } catch (_) {
         window.alert('删除教师失败，请检查网络后重试。');
+      }
+    }, true);
+  }
+
+  function bindTeacherActionHandler() {
+    if (document.body.getAttribute('data-db-teacher-action-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-teacher-action-bound', '1');
+
+    document.body.addEventListener('click', async function (event) {
+      var permBtn = event.target.closest('.perm-teacher-btn');
+      var editBtn = event.target.closest('.edit-teacher-btn');
+      if (!permBtn && !editBtn) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      var teacherId = Number((permBtn || editBtn).getAttribute('data-teacher-id'));
+      if (!Number.isInteger(teacherId) || teacherId <= 0) {
+        return;
+      }
+      var teacher = findTeacherById(teacherId);
+      if (!teacher) {
+        return;
+      }
+
+      if (permBtn) {
+        var nextRole = teacher.role === 'admin' ? 'teacher' : 'admin';
+        var roleText = nextRole === 'admin' ? '管理员' : '教师';
+        var ok = window.confirm('将账号 [' + (teacher.username || '') + '] 权限改为“' + roleText + '”？');
+        if (!ok) {
+          return;
+        }
+        try {
+          var resPerm = await fetch(API_BASE + '/api/teachers/' + teacherId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: nextRole })
+          });
+          if (!resPerm.ok) {
+            window.alert('更新权限失败，请稍后重试。');
+            return;
+          }
+          await runTeacherPageOverride();
+        } catch (_) {
+          window.alert('更新权限失败，请检查网络后重试。');
+        }
+        return;
+      }
+
+      if (editBtn) {
+        var newName = window.prompt('请输入教师姓名', teacher.name || '');
+        if (newName == null) {
+          return;
+        }
+        newName = String(newName || '').trim();
+        if (!newName) {
+          window.alert('姓名不能为空。');
+          return;
+        }
+        var newPassword = window.prompt('请输入新密码（留空表示不修改）', '');
+        if (newPassword == null) {
+          return;
+        }
+        newPassword = String(newPassword || '').trim();
+
+        var payload = { name: newName };
+        if (newPassword) {
+          payload.password = newPassword;
+        }
+
+        try {
+          var resEdit = await fetch(API_BASE + '/api/teachers/' + teacherId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!resEdit.ok) {
+            window.alert('更新教师信息失败，请稍后重试。');
+            return;
+          }
+          await runTeacherPageOverride();
+        } catch (_) {
+          window.alert('更新教师信息失败，请检查网络后重试。');
+        }
       }
     }, true);
   }
@@ -1726,6 +1837,7 @@
   bootstrapFromServer();
   mirrorWholeStorage();
   bindTeacherCreateHandler();
+  bindTeacherActionHandler();
   bindTeacherDeleteHandler();
   bindDashboardRefreshHandler();
   setTimeout(function () { runTeacherPageOverride(); }, 700);
