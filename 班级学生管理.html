@@ -331,7 +331,7 @@
         }
         var script = doc.createElement('script');
         script.id = 'sqlite-bridge-script';
-        script.src = '/assets/static/bridge.js';
+        script.src = '/assets/static/bridge.js?v=20260213c';
         script.defer = true;
         doc.head.appendChild(script);
       } catch (e) {
@@ -348,7 +348,7 @@
     } else {
       var ownScript = document.createElement('script');
       ownScript.id = 'sqlite-bridge-script';
-      ownScript.src = '/assets/static/bridge.js';
+      ownScript.src = '/assets/static/bridge.js?v=20260213c';
       ownScript.defer = true;
       document.head.appendChild(ownScript);
     }
@@ -356,3 +356,4 @@
 </script></body>
                 </html>
             
+

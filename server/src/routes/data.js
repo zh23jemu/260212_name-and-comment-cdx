@@ -18,11 +18,11 @@ const evaluationSchema = z.object({
 });
 
 export default async function dataRoutes(fastify) {
-  fastify.get('/api/classes', { preHandler: requireAuth }, async () => {
+  fastify.get('/api/classes', async () => {
     return db.prepare('SELECT id, name, grade, created_at as createdAt FROM classes ORDER BY id').all();
   });
 
-  fastify.get('/api/classes/:id/students', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.get('/api/classes/:id/students', async (request, reply) => {
     const classId = Number(request.params.id);
     if (!Number.isInteger(classId) || classId <= 0) {
       return reply.code(400).send({ error: 'INVALID_CLASS_ID' });
