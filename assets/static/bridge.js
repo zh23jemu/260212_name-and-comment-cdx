@@ -151,6 +151,7 @@
 
   async function fetchDashboardStats() {
     var classes = [];
+    var teachers = [];
     try {
       var cRes = await fetch(API_BASE + '/api/classes');
       if (cRes.ok) {
@@ -158,8 +159,18 @@
       }
     } catch (_) {}
 
+    try {
+      var tRes = await fetch(API_BASE + '/api/teachers');
+      if (tRes.ok) {
+        teachers = await tRes.json();
+      }
+    } catch (_) {}
+
     if (!Array.isArray(classes)) {
       classes = [];
+    }
+    if (!Array.isArray(teachers)) {
+      teachers = [];
     }
 
     var students = 0;
@@ -181,6 +192,7 @@
     }
 
     return {
+      teachers: teachers.filter(function (t) { return t && t.role === 'teacher'; }).length,
       classes: classes.length,
       students: students
     };
@@ -193,6 +205,10 @@
 
     try {
       var stats = await fetchDashboardStats();
+      var teacherEl = findCardValueByTitle('活跃教师');
+      if (teacherEl) {
+        teacherEl.textContent = String(stats.teachers);
+      }
       var studentEl = findCardValueByTitle('学生总数');
       if (studentEl) {
         studentEl.textContent = String(stats.students);
@@ -261,7 +277,16 @@
     }
 
     setNumberAfterLabel(stats.total, Array.isArray(teachers) ? teachers.length : 0);
-    setNumberAfterLabel(stats.assigned, Array.isArray(teachers) ? teachers.length : 0);
+    var assignedCount = 0;
+    if (Array.isArray(teachers)) {
+      for (var i = 0; i < teachers.length; i += 1) {
+        var t = teachers[i];
+        if (t && Array.isArray(t.assignedClasses) && t.assignedClasses.length > 0) {
+          assignedCount += 1;
+        }
+      }
+    }
+    setNumberAfterLabel(stats.assigned, assignedCount);
   }
 
   async function updateTeacherClassStats() {
@@ -313,12 +338,22 @@
             '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>' +
           '</button>';
       var tr = document.createElement('tr');
+      tr.setAttribute('data-teacher-id', String(t.id));
+      var assigned = Array.isArray(t.assignedClasses) ? t.assignedClasses : [];
+      var assignedHtml = '';
+      if (!assigned.length) {
+        assignedHtml = '<span class="text-slate-400 font-medium">尚未分配</span>';
+      } else {
+        for (var a = 0; a < assigned.length; a += 1) {
+          assignedHtml += '<span class="inline-flex items-center rounded-full px-2 py-0.5 mr-1 mb-1 text-xs font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50">' + (assigned[a].name || ('班级' + assigned[a].id)) + '</span>';
+        }
+      }
       tr.className = 'transition-colors border-b border-indigo-50 hover:bg-indigo-50/20';
       tr.innerHTML =
         '<td class="p-4 align-middle font-semibold text-indigo-700">' + (t.username || '-') + '</td>' +
         '<td class="p-4 align-middle font-semibold text-slate-900">' + (t.name || '-') + '</td>' +
         '<td class="p-4 align-middle">' + roleBadge + '</td>' +
-        '<td class="p-4 align-middle text-slate-400 font-medium">尚未分配</td>' +
+        '<td class="p-4 align-middle">' + assignedHtml + '</td>' +
         '<td class="p-4 align-middle text-slate-400 font-semibold">' + (created || '-') + '</td>' +
         '<td class="p-4 align-middle text-right">' +
           '<div class="inline-flex items-center justify-end gap-2 whitespace-nowrap">' +
@@ -547,17 +582,19 @@
       }
 
       if (permBtn) {
-        var nextRole = teacher.role === 'admin' ? 'teacher' : 'admin';
-        var roleText = nextRole === 'admin' ? '管理员' : '教师';
-        var ok = window.confirm('将账号 [' + (teacher.username || '') + '] 权限改为“' + roleText + '”？');
-        if (!ok) {
+        var anchorRow = permBtn.closest('tr[data-teacher-id]');
+        if (!anchorRow) {
+          anchorRow = document.querySelector('tr[data-teacher-id="' + teacherId + '"]');
+        }
+        var selectedClassIds = await openTeacherPermissionDialog(teacher, anchorRow);
+        if (!selectedClassIds) {
           return;
         }
         try {
-          var resPerm = await fetch(API_BASE + '/api/teachers/' + teacherId, {
+          var resPerm = await fetch(API_BASE + '/api/teachers/' + teacherId + '/class-permissions', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: nextRole })
+            body: JSON.stringify({ classIds: selectedClassIds })
           });
           if (!resPerm.ok) {
             window.alert('更新权限失败，请稍后重试。');
@@ -597,6 +634,197 @@
         }
       }
     }, true);
+  }
+
+  function openTeacherPermissionDialog(teacher, anchorRow) {
+    return new Promise(async function (resolve) {
+      var old = document.getElementById('db-teacher-perm-inline-row');
+      if (old && old.parentElement) {
+        old.parentElement.removeChild(old);
+      }
+
+      var classes = [];
+      try {
+        var cRes = await fetch(API_BASE + '/api/classes');
+        if (cRes.ok) {
+          classes = await cRes.json();
+        }
+      } catch (_) {}
+      if (!Array.isArray(classes)) {
+        classes = [];
+      }
+
+      var selectedSet = {};
+      var assignedClasses = Array.isArray(teacher && teacher.assignedClasses) ? teacher.assignedClasses : [];
+      for (var i = 0; i < assignedClasses.length; i += 1) {
+        selectedSet[Number(assignedClasses[i].id)] = true;
+      }
+
+      if (!anchorRow || !anchorRow.parentElement) {
+        resolve(null);
+        return;
+      }
+
+      var inlineRow = document.createElement('tr');
+      inlineRow.id = 'db-teacher-perm-inline-row';
+      inlineRow.className = 'bg-indigo-50/40';
+      var inlineCell = document.createElement('td');
+      inlineCell.colSpan = 6;
+      inlineCell.className = 'p-3';
+      inlineRow.appendChild(inlineCell);
+      anchorRow.insertAdjacentElement('afterend', inlineRow);
+
+      var card = document.createElement('div');
+      card.className = 'rounded-xl bg-slate-50 shadow-lg border border-indigo-100 overflow-hidden';
+      card.style.width = '96%';
+      card.style.minWidth = '0';
+      card.style.maxWidth = 'none';
+      card.style.margin = '0 auto';
+
+      var gradeMap = {};
+      for (var c = 0; c < classes.length; c += 1) {
+        var cls = classes[c];
+        var grade = (cls && cls.grade ? String(cls.grade).trim() : '') || '未分组';
+        if (!gradeMap[grade]) {
+          gradeMap[grade] = [];
+        }
+        gradeMap[grade].push(cls);
+      }
+      var gradeList = Object.keys(gradeMap);
+
+      var gradeOptions = '<option value="">全部年级</option>';
+      for (var g = 0; g < gradeList.length; g += 1) {
+        gradeOptions += '<option value="' + gradeList[g] + '">' + gradeList[g] + '</option>';
+      }
+
+      card.innerHTML =
+        '<div class="px-6 py-4 bg-white border-b border-indigo-100 flex items-center justify-between">' +
+          '<div class="flex items-center gap-3">' +
+            '<div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">🛡</div>' +
+            '<div>' +
+              '<div class="text-base font-extrabold text-slate-900">给' + (teacher.name || teacher.username || '教师') + ' 分配班级权限</div>' +
+              '<div class="text-sm text-indigo-500 font-semibold">当前已选 <span class="db-selected-count">0</span> 个教学班级</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="flex items-center gap-3">' +
+            '<select class="db-grade-filter h-9 px-2 rounded-lg border border-indigo-100 text-indigo-700 bg-white text-xs font-semibold">' + gradeOptions + '</select>' +
+            '<button type="button" class="db-perm-cancel text-slate-500 text-base font-semibold">取消</button>' +
+            '<button type="button" class="db-perm-save h-9 px-3 rounded-lg text-white text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md">保存</button>' +
+            '<button type="button" class="db-perm-close text-2xl leading-none text-slate-400 hover:text-slate-700">×</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="p-4 max-h-[52vh] overflow-auto">' +
+          '<div class="db-perm-groups space-y-6"></div>' +
+        '</div>';
+
+      inlineCell.appendChild(card);
+
+      var groupsHost = card.querySelector('.db-perm-groups');
+      var countNode = card.querySelector('.db-selected-count');
+      var filterNode = card.querySelector('.db-grade-filter');
+
+      function selectedCount() {
+        var n = 0;
+        var keys = Object.keys(selectedSet);
+        for (var si = 0; si < keys.length; si += 1) {
+          if (selectedSet[keys[si]]) n += 1;
+        }
+        return n;
+      }
+
+      function classCardHtml(cls, selected) {
+        return (
+          '<button type="button" class="db-perm-class-card relative text-left p-4 rounded-2xl border transition-all ' +
+          (selected
+            ? 'bg-gradient-to-br from-indigo-600 to-purple-500 text-white border-indigo-400 shadow-lg shadow-indigo-200'
+            : 'bg-white text-indigo-900 border-indigo-100 hover:border-indigo-300 hover:shadow-sm') +
+          '" data-class-id="' + cls.id + '">' +
+            '<div class="text-xs tracking-widest uppercase opacity-80 font-bold">CLASS</div>' +
+            '<div class="mt-1 text-2xl font-extrabold">' + (cls.name || ('班级' + cls.id)) + '</div>' +
+            '<div class="mt-2 h-1.5 w-10 rounded-full ' + (selected ? 'bg-white/35' : 'bg-indigo-100') + '"></div>' +
+            (selected ? '<div class="absolute right-3 top-3 text-sm">✓</div>' : '') +
+          '</button>'
+        );
+      }
+
+      function renderGroups() {
+        var filterGrade = filterNode ? String(filterNode.value || '') : '';
+        var html = '';
+        for (var gi = 0; gi < gradeList.length; gi += 1) {
+          var grade = gradeList[gi];
+          if (filterGrade && grade !== filterGrade) {
+            continue;
+          }
+          var arr = gradeMap[grade] || [];
+          var cards = '';
+          for (var ai = 0; ai < arr.length; ai += 1) {
+            var cls2 = arr[ai];
+            var sid = Number(cls2.id);
+            cards += classCardHtml(cls2, !!selectedSet[sid]);
+          }
+          html +=
+            '<section class="space-y-3">' +
+              '<div class="flex items-center justify-between">' +
+                '<div class="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold text-white bg-gradient-to-r from-indigo-600 to-purple-500">' + grade + '</div>' +
+                '<div class="text-xs text-indigo-300 font-semibold">共 ' + arr.length + ' 个班级</div>' +
+              '</div>' +
+              '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">' + cards + '</div>' +
+            '</section>';
+        }
+        groupsHost.innerHTML = html || '<div class="text-slate-400">暂无可分配班级</div>';
+        if (countNode) {
+          countNode.textContent = String(selectedCount());
+        }
+      }
+
+      renderGroups();
+
+      groupsHost.addEventListener('click', function (e) {
+        var btn = e.target.closest('.db-perm-class-card');
+        if (!btn) {
+          return;
+        }
+        var cid = Number(btn.getAttribute('data-class-id'));
+        if (!Number.isInteger(cid) || cid <= 0) {
+          return;
+        }
+        selectedSet[cid] = !selectedSet[cid];
+        renderGroups();
+      });
+      if (filterNode) {
+        filterNode.addEventListener('change', renderGroups);
+      }
+
+      var closed = false;
+      function close(result) {
+        if (closed) return;
+        closed = true;
+        if (inlineRow && inlineRow.parentElement) inlineRow.parentElement.removeChild(inlineRow);
+        resolve(result || null);
+      }
+
+      function onCancel() {
+        close(null);
+      }
+      function onSave() {
+        var ids = [];
+        var keys = Object.keys(selectedSet);
+        for (var k = 0; k < keys.length; k += 1) {
+          if (selectedSet[keys[k]]) {
+            var id = Number(keys[k]);
+            if (Number.isInteger(id) && id > 0) ids.push(id);
+          }
+        }
+        close(ids);
+      }
+
+      var closeBtn = card.querySelector('.db-perm-close');
+      var cancelBtn = card.querySelector('.db-perm-cancel');
+      var saveBtn = card.querySelector('.db-perm-save');
+      if (closeBtn) closeBtn.addEventListener('click', onCancel);
+      if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+      if (saveBtn) saveBtn.addEventListener('click', onSave);
+    });
   }
 
   function openTeacherEditDialog(teacher) {

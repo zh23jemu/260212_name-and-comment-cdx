@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS evaluations (
   FOREIGN KEY (teacher_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS teacher_class_permissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  teacher_id INTEGER NOT NULL,
+  class_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(teacher_id, class_id),
+  FOREIGN KEY (teacher_id) REFERENCES users(id),
+  FOREIGN KEY (class_id) REFERENCES classes(id)
+);
+
 CREATE TABLE IF NOT EXISTS kv_store (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   namespace TEXT NOT NULL,
@@ -75,4 +85,6 @@ CREATE TABLE IF NOT EXISTS kv_store (
 CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
 CREATE INDEX IF NOT EXISTS idx_eval_class ON evaluations(class_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_class_date ON attendance(class_id, attendance_date);
+CREATE INDEX IF NOT EXISTS idx_teacher_perm_teacher ON teacher_class_permissions(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_teacher_perm_class ON teacher_class_permissions(class_id);
 CREATE INDEX IF NOT EXISTS idx_kv_ns_key ON kv_store(namespace, storage_key);

@@ -45,14 +45,118 @@ const updateTeacherSchema = z.object({
   password: z.string().min(1).optional(),
   role: z.enum(['admin', 'teacher']).optional()
 });
+const updateTeacherPermissionsSchema = z.object({
+  classIds: z.array(z.number().int().positive()).default([])
+});
+
+function ensureTeacherPermissionSchema() {
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS teacher_class_permissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      teacher_id INTEGER NOT NULL,
+      class_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(teacher_id, class_id),
+      FOREIGN KEY (teacher_id) REFERENCES users(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );`
+  );
+  db.exec('CREATE INDEX IF NOT EXISTS idx_teacher_perm_teacher ON teacher_class_permissions(teacher_id);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_teacher_perm_class ON teacher_class_permissions(class_id);');
+}
 
 export default async function dataRoutes(fastify) {
+  ensureTeacherPermissionSchema();
+
   fastify.get('/api/teachers', async () => {
-    return db.prepare(
+    const teachers = db.prepare(
       `SELECT id, username, name, role, created_at as createdAt
        FROM users
        ORDER BY id`
     ).all();
+
+    const perms = db.prepare(
+      `SELECT p.teacher_id as teacherId, p.class_id as classId, c.name as className
+       FROM teacher_class_permissions p
+       JOIN classes c ON c.id = p.class_id
+       ORDER BY p.teacher_id, p.class_id`
+    ).all();
+
+    const byTeacher = new Map();
+    for (const row of perms) {
+      if (!byTeacher.has(row.teacherId)) {
+        byTeacher.set(row.teacherId, []);
+      }
+      byTeacher.get(row.teacherId).push({ id: row.classId, name: row.className });
+    }
+
+    return teachers.map((t) => ({
+      ...t,
+      assignedClasses: byTeacher.get(t.id) || []
+    }));
+  });
+
+  fastify.get('/api/teachers/:id/class-permissions', async (request, reply) => {
+    const teacherId = Number(request.params.id);
+    if (!Number.isInteger(teacherId) || teacherId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_TEACHER_ID' });
+    }
+
+    const teacher = db.prepare('SELECT id FROM users WHERE id = ?').get(teacherId);
+    if (!teacher) {
+      return reply.code(404).send({ error: 'TEACHER_NOT_FOUND' });
+    }
+
+    const rows = db.prepare(
+      `SELECT class_id as classId
+       FROM teacher_class_permissions
+       WHERE teacher_id = ?
+       ORDER BY class_id`
+    ).all(teacherId);
+    return { classIds: rows.map((r) => r.classId) };
+  });
+
+  fastify.put('/api/teachers/:id/class-permissions', async (request, reply) => {
+    const teacherId = Number(request.params.id);
+    if (!Number.isInteger(teacherId) || teacherId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_TEACHER_ID' });
+    }
+    const parsed = updateTeacherPermissionsSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const teacher = db.prepare('SELECT id FROM users WHERE id = ?').get(teacherId);
+    if (!teacher) {
+      return reply.code(404).send({ error: 'TEACHER_NOT_FOUND' });
+    }
+
+    const uniqueIds = Array.from(new Set(parsed.data.classIds));
+    if (uniqueIds.length > 0) {
+      const placeholders = uniqueIds.map(() => '?').join(',');
+      const validRows = db.prepare(`SELECT id FROM classes WHERE id IN (${placeholders})`).all(...uniqueIds);
+      if (validRows.length !== uniqueIds.length) {
+        return reply.code(400).send({ error: 'INVALID_CLASS_IDS' });
+      }
+    }
+
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM teacher_class_permissions WHERE teacher_id = ?').run(teacherId);
+      const insertPerm = db.prepare(
+        `INSERT INTO teacher_class_permissions (teacher_id, class_id)
+         VALUES (?, ?)`
+      );
+      for (const classId of uniqueIds) {
+        insertPerm.run(teacherId, classId);
+      }
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { ok: true, teacherId, classIds: uniqueIds };
   });
 
   fastify.post('/api/teachers', async (request, reply) => {
@@ -117,6 +221,7 @@ export default async function dataRoutes(fastify) {
     db.exec('BEGIN');
     try {
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(teacherId);
+      db.prepare('DELETE FROM teacher_class_permissions WHERE teacher_id = ?').run(teacherId);
       db.prepare('DELETE FROM attendance WHERE teacher_id = ?').run(teacherId);
       db.prepare('DELETE FROM evaluations WHERE teacher_id = ?').run(teacherId);
       db.prepare('DELETE FROM users WHERE id = ?').run(teacherId);
@@ -190,6 +295,7 @@ export default async function dataRoutes(fastify) {
       const studentRows = db.prepare('SELECT id FROM students WHERE class_id = ?').all(classId);
       const delAttendanceByClass = db.prepare('DELETE FROM attendance WHERE class_id = ?');
       const delEvalByClass = db.prepare('DELETE FROM evaluations WHERE class_id = ?');
+      const delPermByClass = db.prepare('DELETE FROM teacher_class_permissions WHERE class_id = ?');
       const delAttendanceByStudent = db.prepare('DELETE FROM attendance WHERE student_id = ?');
       const delEvalByStudent = db.prepare('DELETE FROM evaluations WHERE student_id = ?');
       const delStudents = db.prepare('DELETE FROM students WHERE class_id = ?');
@@ -197,6 +303,7 @@ export default async function dataRoutes(fastify) {
 
       delAttendanceByClass.run(classId);
       delEvalByClass.run(classId);
+      delPermByClass.run(classId);
       for (const row of studentRows) {
         delAttendanceByStudent.run(row.id);
         delEvalByStudent.run(row.id);
