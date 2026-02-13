@@ -407,6 +407,38 @@
                     </div>
                   </div>
 
-                </body>
+                <script>
+  (function () {
+    function injectBridge(iframe) {
+      try {
+        var doc = iframe && iframe.contentDocument;
+        if (!doc || !doc.head || doc.getElementById('sqlite-bridge-script')) {
+          return;
+        }
+        var script = doc.createElement('script');
+        script.id = 'sqlite-bridge-script';
+        script.src = '/assets/static/bridge.js';
+        script.defer = true;
+        doc.head.appendChild(script);
+      } catch (e) {
+        // Ignore iframe injection failures.
+      }
+    }
+
+    var iframe = document.getElementById('dynamicIframe');
+    if (iframe) {
+      iframe.addEventListener('load', function () {
+        injectBridge(iframe);
+      });
+      injectBridge(iframe);
+    } else {
+      var ownScript = document.createElement('script');
+      ownScript.id = 'sqlite-bridge-script';
+      ownScript.src = '/assets/static/bridge.js';
+      ownScript.defer = true;
+      document.head.appendChild(ownScript);
+    }
+  })();
+</script></body>
                 </html>
             
