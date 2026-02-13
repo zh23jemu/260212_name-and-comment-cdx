@@ -7,7 +7,21 @@
   }
   window[BRIDGE_FLAG] = true;
 
-  var NAMESPACE = (location.pathname || '/').replace(/[^a-zA-Z0-9_-]/g, '_') || 'global';
+  function getNamespace() {
+    var base = location.pathname || '/';
+    if (base === '/blank' || base === 'blank' || base === '/' || base === '') {
+      try {
+        if (document.referrer) {
+          base = new URL(document.referrer).pathname || base;
+        }
+      } catch (err) {
+        // Use current path fallback.
+      }
+    }
+    return base.replace(/[^a-zA-Z0-9_-]/g, '_') || 'global';
+  }
+
+  var NAMESPACE = getNamespace();
   var API_BASE = location.origin;
 
   function postJson(path, payload) {

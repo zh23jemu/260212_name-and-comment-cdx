@@ -26,6 +26,9 @@ await app.register(dataRoutes);
 await app.register(kvRoutes);
 
 app.get('/api/health', async () => ({ ok: true, timestamp: new Date().toISOString() }));
+app.get('/', async (_, reply) => {
+  reply.redirect('/%E6%95%99%E5%B8%88%E7%99%BB%E5%BD%95%E9%A1%B5.html');
+});
 
 app.setNotFoundHandler((request, reply) => {
   if (request.url.startsWith('/api/')) {

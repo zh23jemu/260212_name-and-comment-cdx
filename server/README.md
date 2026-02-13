@@ -12,6 +12,10 @@
 
 Service runs on `http://0.0.0.0:3000` by default.
 
+## Acceptance Check
+- `npm run acceptance`
+- This starts the server temporarily and verifies: health, login, class/student query, attendance write/read, evaluation write, statistics, and KV sync.
+
 ## Default accounts
 - `teacher / 123456`
 - `admin / admin123`
