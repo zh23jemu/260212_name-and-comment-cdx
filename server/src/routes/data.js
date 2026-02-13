@@ -22,10 +22,101 @@ const createStudentSchema = z.object({
   studentNo: z.string().optional().default(''),
   status: z.string().optional().default('active')
 });
+const createClassSchema = z.object({
+  name: z.string().min(1),
+  grade: z.string().optional().default('')
+});
+const updateClassSchema = z.object({
+  name: z.string().min(1).optional(),
+  grade: z.string().optional()
+});
+const batchDeleteStudentsSchema = z.object({
+  studentIds: z.array(z.number().int().positive()).min(1)
+});
 
 export default async function dataRoutes(fastify) {
   fastify.get('/api/classes', async () => {
     return db.prepare('SELECT id, name, grade, created_at as createdAt FROM classes ORDER BY id').all();
+  });
+
+  fastify.post('/api/classes', async (request, reply) => {
+    const parsed = createClassSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const body = parsed.data;
+    const result = db.prepare(
+      `INSERT INTO classes (name, grade)
+       VALUES (?, ?)`
+    ).run(body.name.trim(), (body.grade || '').trim());
+
+    return { ok: true, id: result.lastInsertRowid };
+  });
+
+  fastify.put('/api/classes/:id', async (request, reply) => {
+    const classId = Number(request.params.id);
+    if (!Number.isInteger(classId) || classId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_CLASS_ID' });
+    }
+
+    const parsed = updateClassSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const existing = db.prepare('SELECT id, name, grade FROM classes WHERE id = ?').get(classId);
+    if (!existing) {
+      return reply.code(404).send({ error: 'CLASS_NOT_FOUND' });
+    }
+
+    const name = (parsed.data.name ?? existing.name ?? '').trim();
+    const grade = (parsed.data.grade ?? existing.grade ?? '').trim();
+    if (!name) {
+      return reply.code(400).send({ error: 'INVALID_CLASS_NAME' });
+    }
+
+    db.prepare('UPDATE classes SET name = ?, grade = ? WHERE id = ?').run(name, grade, classId);
+    return { ok: true, id: classId };
+  });
+
+  fastify.delete('/api/classes/:id', async (request, reply) => {
+    const classId = Number(request.params.id);
+    if (!Number.isInteger(classId) || classId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_CLASS_ID' });
+    }
+
+    const existing = db.prepare('SELECT id FROM classes WHERE id = ?').get(classId);
+    if (!existing) {
+      return { ok: true, id: classId, deleted: false };
+    }
+
+    db.exec('BEGIN');
+    try {
+      const studentRows = db.prepare('SELECT id FROM students WHERE class_id = ?').all(classId);
+      const delAttendanceByClass = db.prepare('DELETE FROM attendance WHERE class_id = ?');
+      const delEvalByClass = db.prepare('DELETE FROM evaluations WHERE class_id = ?');
+      const delAttendanceByStudent = db.prepare('DELETE FROM attendance WHERE student_id = ?');
+      const delEvalByStudent = db.prepare('DELETE FROM evaluations WHERE student_id = ?');
+      const delStudents = db.prepare('DELETE FROM students WHERE class_id = ?');
+      const delClass = db.prepare('DELETE FROM classes WHERE id = ?');
+
+      delAttendanceByClass.run(classId);
+      delEvalByClass.run(classId);
+      for (const row of studentRows) {
+        delAttendanceByStudent.run(row.id);
+        delEvalByStudent.run(row.id);
+      }
+      delStudents.run(classId);
+      delClass.run(classId);
+
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { ok: true, id: classId, deleted: true };
   });
 
   fastify.get('/api/classes/:id/students', async (request, reply) => {
@@ -68,6 +159,37 @@ export default async function dataRoutes(fastify) {
     }
 
     return { ok: true, id: studentId, deleted: true };
+  });
+
+  fastify.post('/api/students/batch-delete', async (request, reply) => {
+    const parsed = batchDeleteStudentsSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const ids = Array.from(new Set(parsed.data.studentIds));
+    let deletedCount = 0;
+
+    db.exec('BEGIN');
+    try {
+      const delAttendance = db.prepare('DELETE FROM attendance WHERE student_id = ?');
+      const delEvaluation = db.prepare('DELETE FROM evaluations WHERE student_id = ?');
+      const delStudent = db.prepare('DELETE FROM students WHERE id = ?');
+
+      for (const id of ids) {
+        delAttendance.run(id);
+        delEvaluation.run(id);
+        const result = delStudent.run(id);
+        deletedCount += Number(result.changes || 0);
+      }
+
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { ok: true, requested: ids.length, deleted: deletedCount };
   });
 
   fastify.post('/api/students', async (request, reply) => {
