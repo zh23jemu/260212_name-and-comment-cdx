@@ -7,16 +7,22 @@ const adminHash = bcrypt.hashSync('admin123', 10);
 db.exec('BEGIN');
 try {
   db.prepare(
-    `INSERT INTO users (username, password_hash, role)
-     VALUES (?, ?, ?)
-     ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role`
-  ).run('teacher', teacherHash, 'teacher');
+    `INSERT INTO users (username, name, password_hash, role)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(username) DO UPDATE SET
+       name = excluded.name,
+       password_hash = excluded.password_hash,
+       role = excluded.role`
+  ).run('teacher', '教师账号', teacherHash, 'teacher');
 
   db.prepare(
-    `INSERT INTO users (username, password_hash, role)
-     VALUES (?, ?, ?)
-     ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role`
-  ).run('admin', adminHash, 'admin');
+    `INSERT INTO users (username, name, password_hash, role)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(username) DO UPDATE SET
+       name = excluded.name,
+       password_hash = excluded.password_hash,
+       role = excluded.role`
+  ).run('admin', '管理员', adminHash, 'admin');
 
   const existingClasses = db.prepare('SELECT COUNT(1) AS count FROM classes').get().count;
   if (existingClasses === 0) {

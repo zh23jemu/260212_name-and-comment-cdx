@@ -18,7 +18,7 @@ export function resolveSession(token) {
   }
 
   const row = db.prepare(
-    `SELECT s.token, s.expires_at, u.id, u.username, u.role
+    `SELECT s.token, s.expires_at, u.id, u.username, u.name, u.role
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = ?`
@@ -39,6 +39,7 @@ export function resolveSession(token) {
     user: {
       id: row.id,
       username: row.username,
+      name: row.name || '',
       role: row.role
     }
   };

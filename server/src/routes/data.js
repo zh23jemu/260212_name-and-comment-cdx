@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import db from '../db.js';
 import { requireAuth } from '../auth.js';
 
@@ -33,8 +34,101 @@ const updateClassSchema = z.object({
 const batchDeleteStudentsSchema = z.object({
   studentIds: z.array(z.number().int().positive()).min(1)
 });
+const createTeacherSchema = z.object({
+  username: z.string().min(1),
+  name: z.string().min(1),
+  password: z.string().min(1),
+  role: z.enum(['admin', 'teacher']).optional().default('teacher')
+});
+const updateTeacherSchema = z.object({
+  name: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+  role: z.enum(['admin', 'teacher']).optional()
+});
 
 export default async function dataRoutes(fastify) {
+  fastify.get('/api/teachers', async () => {
+    return db.prepare(
+      `SELECT id, username, name, role, created_at as createdAt
+       FROM users
+       ORDER BY id`
+    ).all();
+  });
+
+  fastify.post('/api/teachers', async (request, reply) => {
+    const parsed = createTeacherSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const body = parsed.data;
+    const existed = db.prepare('SELECT id FROM users WHERE username = ?').get(body.username.trim());
+    if (existed) {
+      return reply.code(409).send({ error: 'DUPLICATE_USERNAME' });
+    }
+
+    const hash = bcrypt.hashSync(body.password, 10);
+    const result = db.prepare(
+      `INSERT INTO users (username, name, password_hash, role)
+       VALUES (?, ?, ?, ?)`
+    ).run(body.username.trim(), body.name.trim(), hash, body.role || 'teacher');
+
+    return { ok: true, id: result.lastInsertRowid };
+  });
+
+  fastify.put('/api/teachers/:id', async (request, reply) => {
+    const teacherId = Number(request.params.id);
+    if (!Number.isInteger(teacherId) || teacherId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_TEACHER_ID' });
+    }
+
+    const parsed = updateTeacherSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const current = db.prepare('SELECT id, name, role, password_hash FROM users WHERE id = ?').get(teacherId);
+    if (!current) {
+      return reply.code(404).send({ error: 'TEACHER_NOT_FOUND' });
+    }
+
+    const name = (parsed.data.name ?? current.name ?? '').trim();
+    const role = parsed.data.role ?? current.role;
+    const passwordHash = parsed.data.password ? bcrypt.hashSync(parsed.data.password, 10) : current.password_hash;
+    if (!name) {
+      return reply.code(400).send({ error: 'INVALID_NAME' });
+    }
+
+    db.prepare('UPDATE users SET name = ?, role = ?, password_hash = ? WHERE id = ?').run(name, role, passwordHash, teacherId);
+    return { ok: true, id: teacherId };
+  });
+
+  fastify.delete('/api/teachers/:id', async (request, reply) => {
+    const teacherId = Number(request.params.id);
+    if (!Number.isInteger(teacherId) || teacherId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_TEACHER_ID' });
+    }
+
+    const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(teacherId);
+    if (!existing) {
+      return { ok: true, id: teacherId, deleted: false };
+    }
+
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(teacherId);
+      db.prepare('DELETE FROM attendance WHERE teacher_id = ?').run(teacherId);
+      db.prepare('DELETE FROM evaluations WHERE teacher_id = ?').run(teacherId);
+      db.prepare('DELETE FROM users WHERE id = ?').run(teacherId);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { ok: true, id: teacherId, deleted: true };
+  });
+
   fastify.get('/api/classes', async () => {
     return db.prepare('SELECT id, name, grade, created_at as createdAt FROM classes ORDER BY id').all();
   });

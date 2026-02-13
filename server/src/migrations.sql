@@ -3,6 +3,7 @@ PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'teacher',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

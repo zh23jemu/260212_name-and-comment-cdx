@@ -15,7 +15,7 @@ export default async function authRoutes(fastify) {
       return reply.code(400).send({ error: 'INVALID_REQUEST' });
     }
 
-    const user = db.prepare('SELECT id, username, password_hash, role FROM users WHERE username = ?').get(parsed.data.username);
+    const user = db.prepare('SELECT id, username, name, password_hash, role FROM users WHERE username = ?').get(parsed.data.username);
     if (!user || !bcrypt.compareSync(parsed.data.password, user.password_hash)) {
       return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
     }
@@ -24,7 +24,7 @@ export default async function authRoutes(fastify) {
     return {
       token: session.token,
       expiresAt: session.expiresAt,
-      user: { id: user.id, username: user.username, role: user.role }
+      user: { id: user.id, username: user.username, name: user.name || '', role: user.role }
     };
   });
 

@@ -109,6 +109,10 @@
     return (document.title || '').indexOf('班级学生管理') >= 0;
   }
 
+  function detectTeacherManagementPage() {
+    return (document.title || '').indexOf('教师与权限管理') >= 0;
+  }
+
   function detectAdminDashboardPage() {
     return (document.title || '').indexOf('管理后台仪表盘') >= 0;
   }
@@ -217,6 +221,270 @@
       event.preventDefault();
       event.stopPropagation();
       runDashboardOverride();
+    }, true);
+  }
+
+  var teacherState = {
+    initialized: false,
+    teachers: []
+  };
+
+  function getTeacherTableBody() {
+    var tables = Array.prototype.slice.call(document.querySelectorAll('table'));
+    for (var i = 0; i < tables.length; i += 1) {
+      var headerText = (tables[i].querySelector('thead') ? tables[i].querySelector('thead').innerText : '') || '';
+      if (headerText.indexOf('用户名') >= 0 && headerText.indexOf('姓名') >= 0) {
+        return tables[i].querySelector('tbody');
+      }
+    }
+    return null;
+  }
+
+  function updateTeacherStats(teachers) {
+    var stats = {};
+    var cards = Array.prototype.slice.call(document.querySelectorAll('p'));
+    for (var i = 0; i < cards.length; i += 1) {
+      var key = (cards[i].innerText || '').replace(/\s+/g, '');
+      if (key.indexOf('总教师数') >= 0) stats.total = cards[i];
+      if (key.indexOf('已分配权限') >= 0) stats.assigned = cards[i];
+      if (key.indexOf('班级总数') >= 0) stats.classes = cards[i];
+    }
+
+    function setNumberAfterLabel(labelNode, value) {
+      if (!labelNode) return;
+      var box = labelNode.parentElement;
+      if (!box) return;
+      var num = box.querySelector('div.text-4xl');
+      if (num) {
+        num.textContent = String(value);
+      }
+    }
+
+    setNumberAfterLabel(stats.total, Array.isArray(teachers) ? teachers.length : 0);
+    setNumberAfterLabel(stats.assigned, Array.isArray(teachers) ? teachers.length : 0);
+  }
+
+  async function updateTeacherClassStats() {
+    var classesCount = 0;
+    try {
+      var cRes = await fetch(API_BASE + '/api/classes');
+      if (cRes.ok) {
+        var cls = await cRes.json();
+        classesCount = Array.isArray(cls) ? cls.length : 0;
+      }
+    } catch (_) {}
+
+    var cards = Array.prototype.slice.call(document.querySelectorAll('p'));
+    for (var i = 0; i < cards.length; i += 1) {
+      var key = (cards[i].innerText || '').replace(/\s+/g, '');
+      if (key.indexOf('班级总数') >= 0) {
+        var box = cards[i].parentElement;
+        var num = box ? box.querySelector('div.text-4xl') : null;
+        if (num) {
+          num.textContent = String(classesCount);
+        }
+        break;
+      }
+    }
+  }
+
+  function renderTeachers(tbody, teachers) {
+    if (!tbody) {
+      return;
+    }
+
+    tbody.innerHTML = '';
+    if (!teachers || !teachers.length) {
+      var empty = document.createElement('tr');
+      empty.innerHTML = '<td colspan="6" class="px-4 py-8 text-center text-slate-400">暂无教师数据</td>';
+      tbody.appendChild(empty);
+      return;
+    }
+
+    for (var i = 0; i < teachers.length; i += 1) {
+      var t = teachers[i];
+      var created = String(t.createdAt || '').replace('T', ' ').replace('Z', '');
+      var tr = document.createElement('tr');
+      tr.className = 'transition-colors data-[state=selected]:bg-muted border-b border-indigo-50';
+      tr.innerHTML =
+        '<td class="p-4 align-middle font-medium text-indigo-900">' + (t.username || '-') + '</td>' +
+        '<td class="p-4 align-middle">' + (t.name || '-') + '</td>' +
+        '<td class="p-4 align-middle">' + (t.role === 'admin' ? '管理员' : '教师') + '</td>' +
+        '<td class="p-4 align-middle text-slate-500">--</td>' +
+        '<td class="p-4 align-middle text-slate-500">' + (created || '-') + '</td>' +
+        '<td class="p-4 align-middle text-right">' +
+          '<button type="button" class="delete-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-rose-500 hover:bg-rose-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="删除教师">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>' +
+          '</button>' +
+        '</td>';
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function runTeacherPageOverride() {
+    if (!detectTeacherManagementPage() || !API_BASE) {
+      return;
+    }
+
+    var tbody = getTeacherTableBody();
+    if (!tbody) {
+      return;
+    }
+
+    try {
+      var res = await fetch(API_BASE + '/api/teachers');
+      if (!res.ok) {
+        return;
+      }
+      var teachers = await res.json();
+      teacherState.initialized = true;
+      teacherState.teachers = Array.isArray(teachers) ? teachers : [];
+      renderTeachers(tbody, teacherState.teachers);
+      updateTeacherStats(teacherState.teachers);
+      updateTeacherClassStats();
+    } catch (_) {}
+  }
+
+  function bindTeacherCreateHandler() {
+    if (document.body.getAttribute('data-db-create-teacher-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-create-teacher-bound', '1');
+
+    function findDialogRoot(fromEl) {
+      var node = fromEl;
+      while (node && node !== document.body) {
+        var txt = node.innerText || '';
+        if (txt.indexOf('新增教师账号') >= 0 && txt.indexOf('保存修改') >= 0) {
+          return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    }
+
+    function pickInput(root, hints, fallbackIndex) {
+      var inputs = Array.prototype.slice.call(root.querySelectorAll('input'));
+      for (var i = 0; i < inputs.length; i += 1) {
+        var ph = String(inputs[i].getAttribute('placeholder') || '');
+        for (var j = 0; j < hints.length; j += 1) {
+          if (ph.indexOf(hints[j]) >= 0) {
+            return inputs[i];
+          }
+        }
+      }
+      return inputs[fallbackIndex] || null;
+    }
+
+    document.body.addEventListener('click', async function (event) {
+      if (!detectTeacherManagementPage()) {
+        return;
+      }
+      var btn = event.target.closest('button');
+      if (!btn) {
+        return;
+      }
+      var txt = (btn.innerText || '').replace(/\s+/g, '');
+      if (txt.indexOf('保存修改') < 0) {
+        return;
+      }
+
+      var dialog = findDialogRoot(btn);
+      if (!dialog) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      var usernameInput = pickInput(dialog, ['用户名'], 0);
+      var nameInput = pickInput(dialog, ['教师姓名', '姓名'], 1);
+      var passwordInput = pickInput(dialog, ['输入密码'], 2);
+      var confirmInput = pickInput(dialog, ['再次输入密码', '确认密码'], 3);
+
+      var username = usernameInput ? String(usernameInput.value || '').trim() : '';
+      var name = nameInput ? String(nameInput.value || '').trim() : '';
+      var password = passwordInput ? String(passwordInput.value || '').trim() : '';
+      var confirmPassword = confirmInput ? String(confirmInput.value || '').trim() : '';
+
+      if (!username || !name || !password || !confirmPassword) {
+        window.alert('请完整填写用户名、姓名、密码和确认密码。');
+        return;
+      }
+      if (password !== confirmPassword) {
+        window.alert('两次密码不一致，请重新输入。');
+        return;
+      }
+
+      try {
+        var res = await fetch(API_BASE + '/api/teachers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: username,
+            name: name,
+            password: password,
+            role: 'teacher'
+          })
+        });
+        if (res.status === 409) {
+          window.alert('用户名已存在，请更换后重试。');
+          return;
+        }
+        if (!res.ok) {
+          window.alert('新增教师失败，请稍后重试。');
+          return;
+        }
+
+        await runTeacherPageOverride();
+        var buttons = Array.prototype.slice.call(dialog.querySelectorAll('button'));
+        for (var i = 0; i < buttons.length; i += 1) {
+          var btxt = (buttons[i].innerText || '').replace(/\s+/g, '');
+          if (btxt.indexOf('取消') >= 0 || btxt === '×' || btxt === '✕') {
+            buttons[i].click();
+            break;
+          }
+        }
+      } catch (_) {
+        window.alert('新增教师失败，请检查网络后重试。');
+      }
+    }, true);
+  }
+
+  function bindTeacherDeleteHandler() {
+    if (document.body.getAttribute('data-db-delete-teacher-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-delete-teacher-bound', '1');
+
+    document.body.addEventListener('click', async function (event) {
+      var btn = event.target.closest('.delete-teacher-btn');
+      if (!btn) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      var teacherId = Number(btn.getAttribute('data-teacher-id'));
+      if (!Number.isInteger(teacherId) || teacherId <= 0) {
+        return;
+      }
+
+      var ok = window.confirm('确认删除该教师账号？');
+      if (!ok) {
+        return;
+      }
+      try {
+        var res = await fetch(API_BASE + '/api/teachers/' + teacherId, { method: 'DELETE' });
+        if (!res.ok) {
+          window.alert('删除教师失败，请稍后重试。');
+          return;
+        }
+        await runTeacherPageOverride();
+      } catch (_) {
+        window.alert('删除教师失败，请检查网络后重试。');
+      }
     }, true);
   }
 
@@ -1457,7 +1725,11 @@
 
   bootstrapFromServer();
   mirrorWholeStorage();
+  bindTeacherCreateHandler();
+  bindTeacherDeleteHandler();
   bindDashboardRefreshHandler();
+  setTimeout(function () { runTeacherPageOverride(); }, 700);
+  setTimeout(function () { runTeacherPageOverride(); }, 1800);
   setTimeout(function () { runDashboardOverride(); }, 700);
   setTimeout(function () { runDashboardOverride(); }, 1800);
   setTimeout(function () { runClassPageOverride(); }, 900);
@@ -1469,6 +1741,7 @@
     apiBase: API_BASE,
     sync: mirrorWholeStorage,
     overrideClassPage: runClassPageOverride,
-    overrideDashboardPage: runDashboardOverride
+    overrideDashboardPage: runDashboardOverride,
+    overrideTeacherPage: runTeacherPageOverride
   };
 })();
