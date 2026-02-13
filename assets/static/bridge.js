@@ -304,7 +304,8 @@
 
       try {
         var res = await fetch(API_BASE + '/api/students/' + studentId, { method: 'DELETE' });
-        if (!res.ok) {
+        // Treat 404 as already deleted to keep UX idempotent.
+        if (!res.ok && res.status !== 404) {
           return;
         }
 

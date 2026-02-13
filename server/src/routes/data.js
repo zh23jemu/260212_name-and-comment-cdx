@@ -46,7 +46,8 @@ export default async function dataRoutes(fastify) {
 
     const existing = db.prepare('SELECT id FROM students WHERE id = ?').get(studentId);
     if (!existing) {
-      return reply.code(404).send({ error: 'STUDENT_NOT_FOUND' });
+      // Idempotent delete: missing record is treated as already deleted.
+      return { ok: true, id: studentId, deleted: false };
     }
 
     db.exec('BEGIN');
@@ -60,7 +61,7 @@ export default async function dataRoutes(fastify) {
       throw error;
     }
 
-    return { ok: true, id: studentId };
+    return { ok: true, id: studentId, deleted: true };
   });
 
   fastify.get('/api/attendance', { preHandler: requireAuth }, async (request, reply) => {
