@@ -1,0 +1,338 @@
+
+                <!DOCTYPE html>
+                <html lang="zh">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <meta name="color-scheme" content="light">
+                  <meta name="supported-color-schemes" content="light">
+                  <title>数据汇总报表</title>
+                  <style>
+                    *,
+                    *::before,
+                    *::after {
+                      box-sizing: border-box;
+                      margin: 0;
+                    }
+                    .iframe-outer {
+                      position: fixed;
+                      top: 0;
+                      left: 0;
+                      bottom: 0;
+                      right: 0;
+                      display: flex;
+                      justify-content: center;
+                      background-color: #E0E0E0;
+                    }
+                    .iframe-wrapper {
+                      width: 100%;
+                      height: 100%;
+                      margin: 0 auto;
+                      transform-origin: center top;
+                      flex-shrink: 0;
+                    }
+                    #dynamicIframe {
+                      border: none;
+                      width: 100%;
+                      height: 100%;
+                    }
+                  </style>
+                  <script>
+                const width = 1920
+                const height = 1080
+                const resolutionRatio = width && height ? width / height : 1
+                const pageNameMap = {
+                  'login_page': '教师登录页',
+    'teacher_classroom_main': '课堂教学主界面',
+    'report_view_page': '点名与评价统计页',
+    'student_selection_page': '学生评价选择页',
+    'admin_dashboard': '管理后台仪表盘',
+    'teacher_management': '教师与权限管理',
+    'student_class_management': '班级学生管理',
+    'data_statistics': '数据汇总报表',
+    'data_statistics_visual': '实时数据看板'
+                }
+                const allPageIds = ["login_page","teacher_classroom_main","report_view_page","student_selection_page","admin_dashboard","teacher_management","student_class_management","data_statistics","data_statistics_visual"]
+                const allFormatPageIdsMap = {"login_page":"login-page","teacher_classroom_main":"teacher-classroom-main","report_view_page":"report-view-page","student_selection_page":"student-selection-page","admin_dashboard":"admin-dashboard","teacher_management":"teacher-management","student_class_management":"student-class-management","data_statistics":"data-statistics","data_statistics_visual":"data-statistics-visual"}
+                const IFRAME_MESSAGE_TYPE = {
+                  iframeNavigation: 'iframeNavigation',
+                }
+                const safeAddEventListener = function Tc(e,t,r,n=!1){e.removeEventListener(t,r,n),e.addEventListener(t,r,n)}
+                const processOnclick = (e,t,r)=>{if(r){const n=Rw(t);if(n.methodName&&Lp(n.methodName,r))return;e.preventDefault(),e.stopPropagation();const s=n.args||[],i=(s==null?void 0:s.find(u=>u))||"";i&&Mp(i)}}
+                const checkIframeMethod = (e,t)=>{try{return typeof t[e]=="function"||typeof t[e]=="function"}catch(r){return!1}}
+                const postIframeMessage = (targetPageId) => {
+                  window.parent.postMessage({
+                    type: IFRAME_MESSAGE_TYPE.iframeNavigation,
+                    targetPageId,
+                  })
+                }
+                const handleIframeLinkClick = (event) => {
+                  const dynamicIframe = document.querySelector('#dynamicIframe')
+                  if (!dynamicIframe?.contentWindow) {
+                    return
+                  }
+                  const link = event.target.closest('a')
+                  const target = event.target
+                  if (link) {
+                    const href = link.getAttribute('href')
+                    const onclick = link.getAttribute('onclick')
+                    if (href && href !== '#' && !href.startsWith('javascript:')) {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const targetPageId = getKeyByValueObj(allFormatPageIdsMap, href)
+                      if (targetPageId) {
+                        postIframeMessage(targetPageId)
+                      }
+                      return
+                    }
+                    if (onclick) {
+                      processOnclick(event, onclick, iframe.contentWindow, allFormatPageIdsMap)
+                    } else {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }
+                    return
+                  }
+                  const onclick = target.getAttribute('onclick')
+                  if (onclick) {
+                    processOnclick(event, onclick, iframe.contentWindow, allFormatPageIdsMap)
+                  }
+                }
+                function stringExt(link) {
+                  let s = String(link || '')
+                  s = (s.split('#')[0] || '')
+                  s = (s.split('?')[0] || '')
+                  s = s.trim()
+                  s = s.split('/').filter(Boolean).pop() || ''
+                  const lower = s.toLowerCase()
+                  if (lower.endsWith('.html') || lower.endsWith('.php') || lower.endsWith('.aspx')) {
+                    s = s.slice(0, s.lastIndexOf('.'))
+                  }
+                  return s
+                }
+                function formatHref(href) {
+                  if (!href) {
+                    return ''
+                  }
+                  try {
+                    const url = new URL(href, window.location.href)
+                    const pathname = url.pathname || ''
+                    return stringExt(pathname)
+                  } catch {
+                    return stringExt(href)
+                  }
+                }
+                function getKeyByValueObj(obj, value) {
+                  const newValue = formatHref(value)
+                  const keyFind = Object.keys(obj).find(k => k === newValue)
+                  if (keyFind) {
+                    return keyFind
+                  }
+                  return Object.keys(obj).find(k => obj[k] === newValue)
+                }
+                function setIframeSize(w, h) {
+                  const currentContainerRadio = w / h
+                  let widthValue = w
+                  let heightValue = h
+                  let zoom = 1
+                  if (currentContainerRadio > resolutionRatio) {
+                    widthValue = h * resolutionRatio
+                    heightValue = h
+                  } else {
+                    widthValue = w
+                    heightValue = w / resolutionRatio
+                  }
+                  zoom = width ? widthValue / width : 1
+                  return {
+                    width: widthValue / zoom + 'px',
+                    height: heightValue / zoom + 'px',
+                    zoom,
+                  }
+                }
+                function adjustIframeSize() {
+                  const iframeWrapper = document.querySelector(".iframe-wrapper")
+                  const { width, height, zoom } = setIframeSize(window.innerWidth, window.innerHeight)
+                  iframeWrapper.style.height = height
+                  iframeWrapper.style.width = width
+                  iframeWrapper.style.transform = 'scale(' + zoom + ')'
+                }
+                function sanitizeFilename(name) {
+                  return name.replace(/[\/:*?"<>|]/g, '_')
+                }
+                function handlePostMessage(event) {
+                  if (!event.data) {
+                    return
+                  }
+                  const { type, targetPageId } = event.data
+                  const targetPageName = pageNameMap[targetPageId]
+                  if (type === "iframeNavigation" && targetPageId && targetPageName) {
+                    window.location.href = targetPageName + '.html'
+                  }
+                }
+                function setupIframeEvents() {
+                  const iframe = document.getElementById('dynamicIframe')
+                  if (iframe && iframe.contentWindow && iframe.contentWindow.document) {
+                    safeAddEventListener(iframe.contentWindow.document, 'click', handleIframeLinkClick, true)
+                  } else {
+                    setTimeout(setupIframeEvents, 100)
+                  }
+                }
+                window.addEventListener('message', handlePostMessage)
+                window.onload = function() {
+                  adjustIframeSize()
+                  setupIframeEvents()
+                }
+                window.onresize = adjustIframeSize
+                window.onunload = () => {
+                  window.removeEventListener('message', handlePostMessage)
+                }
+              </script>
+                </head>
+                <body>
+                  <div class="iframe-outer">
+                    <div class="iframe-wrapper">
+                      <iframe id="dynamicIframe" srcdoc='<html data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="11" data-source-line-end="21" lang="en"><head data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="12" data-source-line-end="17"><script>(function(){
+      function stringExt(link) {
+        let s = String(link || &#39;&#39;)
+        s = (s.split(&#39;#&#39;)[0] || &#39;&#39;)
+        s = (s.split(&#39;?&#39;)[0] || &#39;&#39;)
+        s = s.trim()
+        s = s.split(&#39;/&#39;).filter(Boolean).pop() || &#39;&#39;
+        const lower = s.toLowerCase()
+        if (lower.endsWith(&#39;.html&#39;) || lower.endsWith(&#39;.php&#39;) || lower.endsWith(&#39;.aspx&#39;)) {
+          s = s.slice(0, s.lastIndexOf(&#39;.&#39;))
+        }
+        return s
+      }
+      function formatHref(href) {
+        if (!href) {
+          return &#39;&#39;
+        }
+        try {
+          const url = new URL(href, window.location.href)
+          const pathname = url.pathname || &#39;&#39;
+          return stringExt(pathname)
+        } catch {
+          return stringExt(href)
+        }
+      }
+      function getKeyByValueObj(obj, value) {
+        const newValue = formatHref(value)
+        const keyFind = Object.keys(obj).find(k => k === newValue)
+        if (keyFind) {
+          return keyFind
+        }
+        return Object.keys(obj).find(k => obj[k] === newValue)
+      }
+      function emit(to, source){
+        try {
+          if (window.parent) {
+            const allFormatPageIdsMap = {"login_page":"login-page","teacher_classroom_main":"teacher-classroom-main","report_view_page":"report-view-page","student_selection_page":"student-selection-page","admin_dashboard":"admin-dashboard","teacher_management":"teacher-management","student_class_management":"student-class-management","data_statistics":"data-statistics","data_statistics_visual":"data-statistics-visual"}
+            const IFRAME_MESSAGE_TYPE = {
+              iframeNavigation: &#39;iframeNavigation&#39;,
+            }
+            const targetPageId = getKeyByValueObj(allFormatPageIdsMap, String(to || &#39;&#39;))
+            if (targetPageId) {
+              window.parent.postMessage({
+                type: IFRAME_MESSAGE_TYPE.iframeNavigation,
+                targetPageId,
+              }, &#39;*&#39;)
+            }
+          }
+        } catch(e) {}
+      }
+      try{
+        if (&#39;navigation&#39; in window &amp;&amp; window.navigation &amp;&amp; typeof window.navigation.addEventListener===&#39;function&#39;){
+          window.navigation.addEventListener(&#39;navigate&#39;, function(e){
+            try{
+              var url = (e.destination &amp;&amp; e.destination.url) || &#39;&#39;;
+              if (e.canIntercept &amp;&amp; typeof e.intercept===&#39;function&#39;){ e.intercept({ handler:function(){} }) }
+              else if (e.preventDefault){ e.preventDefault() }
+              emit(url)
+            }catch(_){}
+          })
+        }
+      }catch(_){}
+    })();</script><meta name="supported-color-schemes" content="light"><meta name="color-scheme" content="light"><style>
+      :root, html, body { color-scheme: light; }
+      html { forced-color-adjust: none; }
+    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Built with Astro">
+    <title data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="16" data-source-line-end="16">数据汇总报表 - 智慧课堂点评系统</title>
+  <link rel="stylesheet" href="./assets/html/97017/admin-dashboard.DojKgBok.css">
+<style>[data-v-32e0cfcf] .sonner-toast{--tw-shadow: var(--shadow-card);--tw-shadow-colored: var(--shadow-card);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000),var(--tw-ring-shadow, 0 0 #0000),var(--tw-shadow);--tw-shadow-color: hsl(var(--card));--tw-shadow: var(--tw-shadow-colored) }
+</style><script src="./assets/static/uxbot/25_6/holder.js"></script><style>
+#inta3k,
+#ibbcsl,
+#i0xspg {
+  pointer-events: none;
+}
+
+#i0x047,
+#ir8zgb,
+#iu4l5c {
+  border: 0px;
+  clip: rect(0px, 0px, 0px, 0px);
+  clip-path: inset(50%);
+  height: 1px;
+  left: -1px;
+  margin: -1px;
+  overflow: hidden;
+  overflow-wrap: normal;
+  padding: 0px;
+  position: absolute;
+  top: -1px;
+  white-space: nowrap;
+  width: 1px;
+}
+
+#i3ksv,
+#i7ota {
+  flex-flow: row;
+}
+
+</style></head>
+<body data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="18" data-source-line-end="20" class="min-h-screen bg-slate-50/50">
+    
+<style>astro-island,astro-slot,astro-static-slot{display:contents}</style><script>(()=>{var e=async t=>{await(await t())()};(self.Astro||(self.Astro={})).load=e;window.dispatchEvent(new Event("astro:load"));})();</script><script>(()=>{var A=Object.defineProperty;var g=(i,o,a)=>o in i?A(i,o,{enumerable:!0,configurable:!0,writable:!0,value:a}):i[o]=a;var d=(i,o,a)=>g(i,typeof o!="symbol"?o+"":o,a);{let i={0:t=>m(t),1:t=>a(t),2:t=>new RegExp(t),3:t=>new Date(t),4:t=>new Map(a(t)),5:t=>new Set(a(t)),6:t=>BigInt(t),7:t=>new URL(t),8:t=>new Uint8Array(t),9:t=>new Uint16Array(t),10:t=>new Uint32Array(t),11:t=>1/0*t},o=t=>{let[l,e]=t;return l in i?i[l](e):void 0},a=t=>t.map(o),m=t=>typeof t!="object"||t===null?t:Object.fromEntries(Object.entries(t).map(([l,e])=>[l,o(e)]));class y extends HTMLElement{constructor(){super(...arguments);d(this,"Component");d(this,"hydrator");d(this,"hydrate",async()=>{var b;if(!this.hydrator||!this.isConnected)return;let e=(b=this.parentElement)==null?void 0:b.closest("astro-island[ssr]");if(e){e.addEventListener("astro:hydrate",this.hydrate,{once:!0});return}let c=this.querySelectorAll("astro-slot"),n={},h=this.querySelectorAll("template[data-astro-template]");for(let r of h){let s=r.closest(this.tagName);s!=null&amp;&amp;s.isSameNode(this)&amp;&amp;(n[r.getAttribute("data-astro-template")||"default"]=r.innerHTML,r.remove())}for(let r of c){let s=r.closest(this.tagName);s!=null&amp;&amp;s.isSameNode(this)&amp;&amp;(n[r.getAttribute("name")||"default"]=r.innerHTML)}let p;try{p=this.hasAttribute("props")?m(JSON.parse(this.getAttribute("props"))):{}}catch(r){let s=this.getAttribute("component-url")||"<unknown>",v=this.getAttribute("component-export");throw v&amp;&amp;(s+=` (export ${v})`),console.error(`[hydrate] Error parsing props for component ${s}`,this.getAttribute("props"),r),r}let u;await this.hydrator(this)(this.Component,p,n,{client:this.getAttribute("client")}),this.removeAttribute("ssr"),this.dispatchEvent(new CustomEvent("astro:hydrate"))});d(this,"unmount",()=>{this.isConnected||this.dispatchEvent(new CustomEvent("astro:unmount"))})}disconnectedCallback(){document.removeEventListener("astro:after-swap",this.unmount),document.addEventListener("astro:after-swap",this.unmount,{once:!0})}connectedCallback(){if(!this.hasAttribute("await-children")||document.readyState==="interactive"||document.readyState==="complete")this.childrenConnectedCallback();else{let e=()=>{document.removeEventListener("DOMContentLoaded",e),c.disconnect(),this.childrenConnectedCallback()},c=new MutationObserver(()=>{var n;((n=this.lastChild)==null?void 0:n.nodeType)===Node.COMMENT_NODE&amp;&amp;this.lastChild.nodeValue==="astro:end"&amp;&amp;(this.lastChild.remove(),e())});c.observe(this,{childList:!0}),document.addEventListener("DOMContentLoaded",e)}}async childrenConnectedCallback(){let e=this.getAttribute("before-hydration-url");e&amp;&amp;await import(e),this.start()}async start(){let e=JSON.parse(this.getAttribute("opts")),c=this.getAttribute("client");if(Astro[c]===void 0){window.addEventListener(`astro:${c}`,()=>this.start(),{once:!0});return}try{await Astro[c](async()=>{let n=this.getAttribute("renderer-url"),[h,{default:p}]=await Promise.all([import(this.getAttribute("component-url")),n?import(n):()=>()=>{}]),u=this.getAttribute("component-export")||"default";if(!u.includes("."))this.Component=h[u];else{this.Component=h;for(let f of u.split("."))this.Component=this.Component[f]}return this.hydrator=p,this.hydrate},e,this)}catch(n){console.error(`[astro-island] Error hydrating ${this.getAttribute("component-url")}`,n)}}attributeChangedCallback(){this.hydrate()}}d(y,"observedAttributes",["props"]),customElements.get("astro-island")||customElements.define("astro-island",y)}})();</script><astro-island uid="Z1NzDBm" prefix="s0" component-url="https://uxbot-prod-public.s3.cn-north-1.amazonaws.com.cn/html/97017/AppHeader.C4V3vuHl.js" component-export="default" renderer-url="https://uxbot-prod-public.s3.cn-north-1.amazonaws.com.cn/html/97017/client.BaQe3G0z.js" props="{&amp;quot;title&amp;quot;:[0,&amp;quot;数据汇总报表&amp;quot;],&amp;quot;userRole&amp;quot;:[0,&amp;quot;admin&amp;quot;],&amp;quot;showLogout&amp;quot;:[0,true],&amp;quot;variant&amp;quot;:[0,&amp;quot;vibrant&amp;quot;],&amp;quot;height&amp;quot;:[0,&amp;quot;large&amp;quot;]}" ssr="" client="load" opts="{&amp;quot;name&amp;quot;:&amp;quot;AppHeader&amp;quot;,&amp;quot;value&amp;quot;:true}" await-children=""><header class="w-full flex items-center justify-between px-8 transition-all duration-700 z-50 relative h-24 bg-vibrant-header text-white shadow-premium" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="73" data-source-line-end="118"><div class="flex items-center gap-3" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="83" data-source-line-end="88"><div class="w-12 h-12 rounded-lg flex items-center justify-center bg-white/20" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="84" data-source-line-end="86"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-white lucide-graduation-cap-icon lucide-graduation-cap text-white" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"></path><path d="M22 10v6"></path><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"></path></svg></div><span class="text-xs hidden md:inline text-white/60" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="87" data-source-line-end="87">v1.0.0</span></div><h1 class="font-bold tracking-wider filter drop-shadow-md transition-all text-sharp antialiased text-3xl md:text-4xl text-glow" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="91" data-source-line-end="98">数据汇总报表</h1><div class="flex items-center gap-4" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="101" data-source-line-end="117"><span class="text-sm font-medium antialiased text-sharp text-white/90" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="102" data-source-line-end="104">管理员</span><button class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;amp;_svg]:pointer-events-none [&amp;amp;_svg]:size-4 [&amp;amp;_svg]:shrink-0 bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 rounded-md px-3" data-source-file="src/components/ui/button/Button.vue" data-source-line-start="21" data-source-line-end="27"><!--[--><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide mr-1 lucide-log-out-icon lucide-log-out mr-1" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49"><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path></svg> 退出 <!--]--></button><span class="text-xs text-white/50" data-source-file="src/components/common/AppHeader.vue" data-source-line-start="114" data-source-line-end="116"> 开发者: 徐汉初</span></div></header><!--astro:end--></astro-island>
+  <astro-island uid="2jozDp" prefix="s1" component-url="https://uxbot-prod-public.s3.cn-north-1.amazonaws.com.cn/html/97017/DataStatisticsContent.CMXf1Bpv.js" component-export="default" renderer-url="https://uxbot-prod-public.s3.cn-north-1.amazonaws.com.cn/html/97017/client.BaQe3G0z.js" props="{}" ssr="" client="load" opts="{&amp;quot;name&amp;quot;:&amp;quot;DataStatisticsContent&amp;quot;,&amp;quot;value&amp;quot;:true}" await-children=""><div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50/50 p-6" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="345" data-source-line-end="701" data-v-32e0cfcf=""><div class="mb-6 flex items-center gap-2 text-sm text-muted-foreground/80" id="i3ksv" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="347" data-source-line-end="356" data-v-32e0cfcf=""><button class="hover:text-foreground transition-colors" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="348" data-source-line-end="353" data-v-32e0cfcf=""> 后台首页 </button><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf="" class="lucide lucide-chevron-right-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"></path></svg><span class="text-foreground font-medium" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="355" data-source-line-end="355" data-v-32e0cfcf="">数据汇总报表</span></div><h1 class="text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600" id="i7ota" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="359" data-source-line-end="361" data-v-32e0cfcf=""> 全校学生评价汇总分析中心 </h1><div class="mb-8 space-y-1" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="363" data-source-line-end="368" data-v-32e0cfcf=""><p class="text-muted-foreground font-medium flex items-center gap-2" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="364" data-source-line-end="367" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-rose-500 lucide-activity-icon lucide-activity text-rose-500" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg> 实时聚合课堂点名与评价数据，支持多维度穿透分析 </p></div><div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="371" data-source-line-end="417" data-v-32e0cfcf=""><div class="bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 p-6 rounded-2xl shadow-premium border-none flex flex-col relative overflow-hidden group" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="372" data-source-line-end="386" data-v-32e0cfcf=""><div class="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform duration-500" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="373" data-source-line-end="375" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf="" class="lucide lucide-user-icon lucide-user"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div><span class="text-xs text-white/80 font-bold mb-2 flex items-center gap-1 uppercase tracking-wider" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="376" data-source-line-end="378" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-white/70 lucide-user-icon lucide-user text-white/70" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg> 师资力量 </span><div class="flex items-baseline justify-between" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="379" data-source-line-end="385" data-v-32e0cfcf=""><span class="text-3xl font-black text-white" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="380" data-source-line-end="380" data-v-32e0cfcf="">0 <span class="text-sm font-medium text-white/70 ml-0.5" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="380" data-source-line-end="380" data-v-32e0cfcf="">位教师</span></span><div class="flex items-center text-xs bg-white/20 text-white px-2 py-1 rounded-lg font-bold backdrop-blur-md" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="381" data-source-line-end="384" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide mr-1 fill-white lucide-star-icon lucide-star mr-1 fill-white" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg> 0</div></div></div><div class="bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-700 p-6 rounded-2xl shadow-premium border-none flex flex-col relative overflow-hidden group" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="388" data-source-line-end="396" data-v-32e0cfcf=""><div class="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform duration-500" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="389" data-source-line-end="391" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf="" class="lucide lucide-users-icon lucide-users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg></div><span class="text-xs text-white/80 font-bold mb-2 flex items-center gap-1 uppercase tracking-wider" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="392" data-source-line-end="394" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-white/70 lucide-users-icon lucide-users text-white/70" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg> 覆盖班级 </span><span class="text-3xl font-black text-white" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="395" data-source-line-end="395" data-v-32e0cfcf="">0 <span class="text-sm font-medium text-white/70 ml-0.5" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="395" data-source-line-end="395" data-v-32e0cfcf="">个班级</span></span></div><div class="bg-gradient-to-br from-rose-500 via-orange-600 to-red-600 p-6 rounded-2xl shadow-premium border-none flex flex-col relative overflow-hidden group" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="398" data-source-line-end="406" data-v-32e0cfcf=""><div class="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform duration-500" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="399" data-source-line-end="401" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf="" class="lucide lucide-target-icon lucide-target"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></div><span class="text-xs text-white/80 font-bold mb-2 flex items-center gap-1 uppercase tracking-wider" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="402" data-source-line-end="404" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-white/70 lucide-target-icon lucide-target text-white/70" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> 累计点名 </span><span class="text-3xl font-black text-white" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="405" data-source-line-end="405" data-v-32e0cfcf="">0 <span class="text-sm font-medium text-white/70 ml-0.5" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="405" data-source-line-end="405" data-v-32e0cfcf="">次记录</span></span></div><div class="bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-600 p-6 rounded-2xl shadow-premium border-none flex flex-col relative overflow-hidden group" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="408" data-source-line-end="416" data-v-32e0cfcf=""><div class="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform duration-500" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="409" data-source-line-end="411" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf="" class="lucide lucide-trophy-icon lucide-trophy"><path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978"></path><path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978"></path><path d="M18 9h1.5a1 1 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z"></path><path d="M6 9H4.5a1 1 0 0 1 0-5H6"></path></svg></div><span class="text-xs text-white/80 font-bold mb-2 flex items-center gap-1 uppercase tracking-wider" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="412" data-source-line-end="414" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-white/70 lucide-trophy-icon lucide-trophy text-white/70" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978"></path><path d="M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978"></path><path d="M18 9h1.5a1 1 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z"></path><path d="M6 9H4.5a1 1 0 0 1 0-5H6"></path></svg> 累计评价 </span><span class="text-3xl font-black text-white" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="415" data-source-line-end="415" data-v-32e0cfcf="">0 <span class="text-sm font-medium text-white/70 ml-0.5" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="415" data-source-line-end="415" data-v-32e0cfcf="">条记录</span></span></div></div><div class="rounded-lg border bg-card text-card-foreground shadow-sm mb-6 border-none shadow-premium bg-gradient-to-r from-blue-500 via-indigo-600 to-violet-700 overflow-hidden relative" data-source-file="src/components/ui/card/Card.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="absolute right-0 top-0 h-full w-1/3 bg-white/5 skew-x-12 translate-x-1/2 pointer-events-none" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="421" data-source-line-end="421" data-v-32e0cfcf=""></div><div class="p-4 md:p-6 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="422" data-source-line-end="499" data-v-32e0cfcf=""><div class="flex items-center gap-3" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="423" data-source-line-end="431" data-v-32e0cfcf=""><div class="p-2 bg-white/20 rounded-xl shadow-inner backdrop-blur-md" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="424" data-source-line-end="426" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-white lucide-funnel-icon lucide-funnel text-white" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"></path></svg></div><div data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="427" data-source-line-end="430" data-v-32e0cfcf=""><h2 class="text-xl font-bold text-white tracking-tight" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="428" data-source-line-end="428" data-v-32e0cfcf="">数据穿透筛选</h2><p class="text-xs text-white/60" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="429" data-source-line-end="429" data-v-32e0cfcf="">实时多维数据钻取</p></div></div><div class="flex flex-wrap items-center gap-6" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="433" data-source-line-end="498" data-v-32e0cfcf=""><div class="flex items-center gap-3" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="435" data-source-line-end="465" data-v-32e0cfcf=""><label class="text-sm font-bold text-white/90 whitespace-nowrap" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="436" data-source-line-end="436" data-v-32e0cfcf="">时间维度</label><!--[--><!--[--><!--[--><button class="flex h-10 items-center justify-between rounded-md border px-3 py-2 text-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&amp;amp;>span]:truncate text-start w-40 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30" data-source-file="src/components/ui/select/SelectTrigger.vue" data-source-line-start="17" data-source-line-end="28" data-v-32e0cfcf="" role="combobox" type="button" aria-controls="reka-select-content-s1-0" aria-expanded="false" aria-required="false" aria-autocomplete="none" dir="ltr" data-state="closed"><!--[--><!--[--><span style="pointer-events:none;" data-placeholder="选择范围" data-source-file="src/components/ui/select/SelectValue.vue" data-source-line-start="9" data-source-line-end="11" data-v-32e0cfcf=""><!--[-->选择范围<!--]--></span><!--]--><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-source-file="src/components/ui/select/SelectTrigger.vue" data-source-line-start="26" data-source-line-end="26" class="lucide w-4 h-4 opacity-50 shrink-0 lucide-chevron-down-icon lucide-chevron-down w-4 h-4 opacity-50 shrink-0"><path d="m6 9 6 6 6-6"></path></svg><!--]--></button><!--v-if--><!--]--><!--]--><select aria-hidden="true" tabindex="-1" style="position:absolute;border:0;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0, 0, 0, 0);clip-path:inset(50%);white-space:nowrap;word-wrap:normal;top:-1px;left:-1px;" value="all"><!--[--><!--]--></select><!--]--><!----></div><div class="flex items-center gap-3" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="468" data-source-line-end="481" data-v-32e0cfcf=""><label class="text-sm font-bold text-white/90 whitespace-nowrap" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="469" data-source-line-end="469" data-v-32e0cfcf="">年级维度</label><!--[--><!--[--><!--[--><button class="flex h-10 items-center justify-between rounded-md border px-3 py-2 text-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&amp;amp;>span]:truncate text-start w-40 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30" data-source-file="src/components/ui/select/SelectTrigger.vue" data-source-line-start="17" data-source-line-end="28" data-v-32e0cfcf="" role="combobox" type="button" aria-controls="reka-select-content-s1-1" aria-expanded="false" aria-required="false" aria-autocomplete="none" dir="ltr" data-state="closed"><!--[--><!--[--><span style="pointer-events:none;" data-placeholder="选择年级" data-source-file="src/components/ui/select/SelectValue.vue" data-source-line-start="9" data-source-line-end="11" data-v-32e0cfcf=""><!--[-->选择年级<!--]--></span><!--]--><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-source-file="src/components/ui/select/SelectTrigger.vue" data-source-line-start="26" data-source-line-end="26" class="lucide w-4 h-4 opacity-50 shrink-0 lucide-chevron-down-icon lucide-chevron-down w-4 h-4 opacity-50 shrink-0"><path d="m6 9 6 6 6-6"></path></svg><!--]--></button><!--v-if--><!--]--><!--]--><select aria-hidden="true" tabindex="-1" style="position:absolute;border:0;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0, 0, 0, 0);clip-path:inset(50%);white-space:nowrap;word-wrap:normal;top:-1px;left:-1px;" value="all"><!--[--><!--]--></select><!--]--></div><div class="flex items-center gap-3" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="484" data-source-line-end="497" data-v-32e0cfcf=""><label class="text-sm font-bold text-white/90 whitespace-nowrap" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="485" data-source-line-end="485" data-v-32e0cfcf="">班级维度</label><!--[--><!--[--><!--[--><button class="flex h-10 items-center justify-between rounded-md border px-3 py-2 text-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&amp;amp;>span]:truncate text-start w-40 bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:ring-white/30" data-source-file="src/components/ui/select/SelectTrigger.vue" data-source-line-start="17" data-source-line-end="28" data-v-32e0cfcf="" role="combobox" type="button" aria-controls="reka-select-content-s1-2" aria-expanded="false" aria-required="false" aria-autocomplete="none" dir="ltr" data-state="closed"><!--[--><!--[--><span style="pointer-events:none;" data-placeholder="选择班级" data-source-file="src/components/ui/select/SelectValue.vue" data-source-line-start="9" data-source-line-end="11" data-v-32e0cfcf=""><!--[-->选择班级<!--]--></span><!--]--><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-source-file="src/components/ui/select/SelectTrigger.vue" data-source-line-start="26" data-source-line-end="26" class="lucide w-4 h-4 opacity-50 shrink-0 lucide-chevron-down-icon lucide-chevron-down w-4 h-4 opacity-50 shrink-0"><path d="m6 9 6 6 6-6"></path></svg><!--]--></button><!--v-if--><!--]--><!--]--><select aria-hidden="true" tabindex="-1" style="position:absolute;border:0;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0, 0, 0, 0);clip-path:inset(50%);white-space:nowrap;word-wrap:normal;top:-1px;left:-1px;" value="all"><!--[--><!--]--></select><!--]--></div></div></div><!--]--></div><div class="rounded-lg border text-card-foreground shadow-sm border-none shadow-premium bg-white/80 backdrop-blur-md overflow-hidden" data-source-file="src/components/ui/card/Card.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="flex flex-col gap-y-1.5 p-6 pb-2" data-source-file="src/components/ui/card/CardHeader.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><div class="flex items-center justify-between" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="505" data-source-line-end="523" data-v-32e0cfcf=""><div class="flex items-center gap-3" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="506" data-source-line-end="512" data-v-32e0cfcf=""><div class="w-2 h-8 bg-gradient-to-b from-primary to-purple-600 rounded-full" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="507" data-source-line-end="507" data-v-32e0cfcf=""></div><div data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="508" data-source-line-end="511" data-v-32e0cfcf=""><h3 class="font-semibold tracking-tight text-xl" data-source-file="src/components/ui/card/CardTitle.vue" data-source-line-start="11" data-source-line-end="17" data-v-32e0cfcf=""><!--[-->全校学生明细统计<!--]--></h3><p class="text-xs text-muted-foreground mt-1" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="510" data-source-line-end="510" data-v-32e0cfcf="">共计 0 名学生符合查询条件</p></div></div><button class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;amp;_svg]:pointer-events-none [&amp;amp;_svg]:size-4 [&amp;amp;_svg]:shrink-0 border bg-transparent hover:text-accent-foreground h-9 rounded-md px-3 border-primary/20 hover:bg-primary/10 text-primary" disabled="" data-source-file="src/components/ui/button/Button.vue" data-source-line-start="21" data-source-line-end="27" data-v-32e0cfcf=""><!--[--><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide mr-2 lucide-download-icon lucide-download mr-2" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M12 15V3"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path></svg> 导出当前筛选 <!--]--></button></div><!--]--></div><div class="p-0" data-source-file="src/components/ui/card/CardContent.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><div class="overflow-x-auto min-h-[400px]" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="526" data-source-line-end="675" data-v-32e0cfcf=""><div class="relative w-full overflow-auto" data-source-file="src/components/ui/table/Table.vue" data-source-line-start="11" data-source-line-end="15" data-v-32e0cfcf=""><table class="w-full caption-bottom text-sm" data-source-file="src/components/ui/table/Table.vue" data-source-line-start="12" data-source-line-end="14"><!--[--><thead class="[&amp;amp;_tr]:border-b rounded-t-xl overflow-hidden shadow-sm" data-source-file="src/components/ui/table/TableHeader.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-600 hover:to-purple-600 border-none" data-source-file="src/components/ui/table/TableRow.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><th class="h-12 text-left align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[11%] font-bold text-white px-6 py-4 first:rounded-tl-xl" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[-->学生姓名<!--]--></th><th class="h-12 text-left align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[8%] font-bold text-white px-6" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[-->班级<!--]--></th><th class="h-12 text-left align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[8%] font-bold text-white px-6" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[-->年级<!--]--></th><th class="h-12 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[10%] text-right font-bold text-white cursor-pointer hover:bg-white/10 select-none transition-colors px-6 py-4" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--> 累计点名 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide inline ml-1 opacity-50 lucide-arrow-up-down-icon lucide-arrow-up-down inline ml-1 opacity-50" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path></svg><!--]--></th><th class="h-12 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[10%] text-right font-bold text-white cursor-pointer hover:bg-white/10 select-none transition-colors px-6 py-4" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--> 时段点名 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide inline ml-1 opacity-50 lucide-arrow-up-down-icon lucide-arrow-up-down inline ml-1 opacity-50" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path></svg><!--]--></th><th class="h-12 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[10%] text-right font-bold text-white cursor-pointer hover:bg-white/10 select-none transition-colors px-6 py-4" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--> 累计评价 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide inline ml-1 opacity-50 lucide-arrow-up-down-icon lucide-arrow-up-down inline ml-1 opacity-50" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path></svg><!--]--></th><th class="h-12 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[10%] text-right font-bold text-white cursor-pointer hover:bg-white/10 select-none transition-colors px-6 py-4" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--> 时段评价 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide inline ml-1 opacity-50 lucide-arrow-up-down-icon lucide-arrow-up-down inline ml-1 opacity-50" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path></svg><!--]--></th><th class="h-12 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[11%] text-right font-bold text-white cursor-pointer hover:bg-white/10 select-none transition-colors px-6 py-4" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--> 累计得星 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide inline ml-1 lucide-arrow-down-icon lucide-arrow-down inline ml-1" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg><!--]--></th><th class="h-12 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 w-[11%] text-right font-bold text-white cursor-pointer hover:bg-white/10 select-none transition-colors px-6 py-4 last:rounded-tr-xl" data-source-file="src/components/ui/table/TableHead.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--> 时段得星 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide inline ml-1 opacity-50 lucide-arrow-up-down-icon lucide-arrow-up-down inline ml-1 opacity-50" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path></svg><!--]--></th><!--]--></tr><!--]--></thead><tbody class="[&amp;amp;_tr:last-child]:border-0" data-source-file="src/components/ui/table/TableBody.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><tr class="data-[state=selected]:bg-muted sticky top-0 z-10 bg-amber-50/95 backdrop-blur-xl hover:bg-amber-100/95 border-b-4 border-amber-300 shadow-premium transition-colors" data-source-file="src/components/ui/table/TableRow.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 font-black text-amber-900 px-6 py-5 flex items-center gap-3" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-white shadow-md" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="575" data-source-line-end="577" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf="" class="lucide lucide-calculator-icon lucide-calculator"><rect width="16" height="20" x="4" y="2" rx="2"></rect><line x1="8" x2="16" y1="6" y2="6"></line><line x1="16" x2="16" y1="14" y2="18"></line><path d="M16 10h.01"></path><path d="M12 10h.01"></path><path d="M8 10h.01"></path><path d="M12 14h.01"></path><path d="M8 14h.01"></path><path d="M12 18h.01"></path><path d="M8 18h.01"></path></svg></div><span class="text-lg" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="578" data-source-line-end="578" data-v-32e0cfcf="">全域合计</span><!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 px-6 text-muted-foreground/30 font-mono" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[-->-<!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 px-6 text-muted-foreground/30 font-mono" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[-->-<!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 text-right px-6" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><span class="font-mono font-black text-amber-900" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="584" data-source-line-end="584" data-v-32e0cfcf="">0</span><!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 text-right px-6" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="inline-flex gap-1 items-center rounded-full border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-blue-200 bg-blue-50 text-blue-700 font-black" data-source-file="src/components/ui/badge/Badge.vue" data-source-line-start="14" data-source-line-end="16" data-v-32e0cfcf=""><!--[-->0<!--]--></div><!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 text-right px-6" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><span class="font-mono font-black text-amber-900" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="594" data-source-line-end="594" data-v-32e0cfcf="">0</span><!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 text-right px-6" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="inline-flex gap-1 items-center rounded-full border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-emerald-200 bg-emerald-50 text-emerald-700 font-black" data-source-file="src/components/ui/badge/Badge.vue" data-source-line-start="14" data-source-line-end="16" data-v-32e0cfcf=""><!--[-->0<!--]--></div><!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 text-right px-6" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="flex items-center justify-end gap-1.5" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="604" data-source-line-end="607" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide text-amber-500 fill-amber-500 lucide-star-icon lucide-star text-amber-500 fill-amber-500" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg><span class="font-mono text-lg font-black text-amber-900" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="606" data-source-line-end="606" data-v-32e0cfcf="">0</span></div><!--]--></td><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 text-right px-6" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="inline-flex gap-1 items-center rounded-full border py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 hover:bg-primary/80 bg-amber-100 text-amber-700 border-amber-200 font-black px-3" data-source-file="src/components/ui/badge/Badge.vue" data-source-line-start="14" data-source-line-end="16" data-v-32e0cfcf=""><!--[-->0<!--]--></div><!--]--></td><!--]--></tr><!--[--><!--]--><tr class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted" data-source-file="src/components/ui/table/TableRow.vue" data-source-line-start="11" data-source-line-end="13" data-v-32e0cfcf=""><!--[--><td class="p-4 align-middle [&amp;amp;:has([role=checkbox])]:pr-0 h-64 text-center" colspan="9" data-source-file="src/components/ui/table/TableCell.vue" data-source-line-start="11" data-source-line-end="20" data-v-32e0cfcf=""><!--[--><div class="flex flex-col items-center justify-center text-muted-foreground" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="667" data-source-line-end="670" data-v-32e0cfcf=""><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide mb-4 opacity-20 lucide-inbox-icon lucide-inbox mb-4 opacity-20" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg><p data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="669" data-source-line-end="669" data-v-32e0cfcf="">未能找到符合条件的学生统计数据</p></div><!--]--></td><!--]--></tr><!--]--></tbody><!--]--></table></div></div><!--]--></div><!--]--></div><div class="mt-6 flex flex-wrap items-center justify-between gap-4" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="680" data-source-line-end="700" data-v-32e0cfcf=""><button class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;amp;_svg]:pointer-events-none [&amp;amp;_svg]:size-4 [&amp;amp;_svg]:shrink-0 border bg-transparent hover:text-accent-foreground h-10 px-4 py-2 border-primary/20 hover:bg-primary/5 text-primary" data-source-file="src/components/ui/button/Button.vue" data-source-line-start="21" data-source-line-end="27" data-v-32e0cfcf=""><!--[--><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide mr-2 lucide-arrow-left-icon lucide-arrow-left mr-2" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg> 返回后台首页 <!--]--></button><div class="flex items-center gap-4" data-source-file="src/components/data-statistics/DataStatisticsContent.vue" data-source-line-start="690" data-source-line-end="699" data-v-32e0cfcf=""><button class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;amp;_svg]:pointer-events-none [&amp;amp;_svg]:size-4 [&amp;amp;_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-700 shadow-md transition-all active:scale-95" disabled="" data-source-file="src/components/ui/button/Button.vue" data-source-line-start="21" data-source-line-end="27" data-v-32e0cfcf=""><!--[--><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide mr-2 lucide-download-icon lucide-download mr-2" data-source-file="src/components/common/SafeIcon.vue" data-source-line-start="43" data-source-line-end="49" data-v-32e0cfcf=""><path d="M12 15V3"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path></svg> 导出所有数据 <!--]--></button></div></div></div><!--astro:end--></astro-island>
+
+  <script>
+    const originalBack = window.history.back
+    const originalForward = window.history.forward
+    const originalGo = window.history.go
+    function isValidNavigation(){
+      if(!window.parent.history.state.back || !window.parent.history.state.back.startsWith(&#39;/designPage&#39;)){
+        return false
+      }
+      return true
+    }
+    window.history.back = function(...args) {
+      if(!isValidNavigation()){
+        return
+      }
+      return originalBack.apply(this, args);
+    };
+
+    window.history.forward = function(...args) {
+      if(!isValidNavigation()){
+        return
+      }
+      return originalForward.apply(this, args);
+    };
+
+    window.history.go = function(...args) {
+      if(!isValidNavigation()){
+        return
+      }
+      return originalGo.apply(this, args);
+    };
+  </script></body></html>'></iframe>
+                    </div>
+                  </div>
+
+                </body>
+                </html>
+            
