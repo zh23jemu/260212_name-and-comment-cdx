@@ -360,6 +360,16 @@
         return;
       }
       var teachers = await res.json();
+      if (Array.isArray(teachers)) {
+        teachers.sort(function (a, b) {
+          var aAdmin = a && a.role === 'admin' ? 1 : 0;
+          var bAdmin = b && b.role === 'admin' ? 1 : 0;
+          if (aAdmin !== bAdmin) {
+            return bAdmin - aAdmin;
+          }
+          return Number(a && a.id ? a.id : 0) - Number(b && b.id ? b.id : 0);
+        });
+      }
       teacherState.initialized = true;
       teacherState.teachers = Array.isArray(teachers) ? teachers : [];
       renderTeachers(tbody, teacherState.teachers);
@@ -561,24 +571,14 @@
       }
 
       if (editBtn) {
-        var newName = window.prompt('请输入教师姓名', teacher.name || '');
-        if (newName == null) {
+        var dialogResult = await openTeacherEditDialog(teacher);
+        if (!dialogResult || !dialogResult.ok) {
           return;
         }
-        newName = String(newName || '').trim();
-        if (!newName) {
-          window.alert('姓名不能为空。');
-          return;
-        }
-        var newPassword = window.prompt('请输入新密码（留空表示不修改）', '');
-        if (newPassword == null) {
-          return;
-        }
-        newPassword = String(newPassword || '').trim();
 
-        var payload = { name: newName };
-        if (newPassword) {
-          payload.password = newPassword;
+        var payload = { name: dialogResult.name };
+        if (dialogResult.password) {
+          payload.password = dialogResult.password;
         }
 
         try {
@@ -597,6 +597,119 @@
         }
       }
     }, true);
+  }
+
+  function openTeacherEditDialog(teacher) {
+    return new Promise(function (resolve) {
+      var old = document.getElementById('db-edit-teacher-overlay');
+      if (old && old.parentElement) {
+        old.parentElement.removeChild(old);
+      }
+
+      var overlay = document.createElement('div');
+      overlay.id = 'db-edit-teacher-overlay';
+      overlay.className = 'fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4';
+      overlay.style.padding = '24px';
+      overlay.style.backdropFilter = 'blur(2px)';
+
+      var card = document.createElement('div');
+      card.className = 'rounded-xl overflow-hidden bg-white shadow-2xl';
+      card.style.width = '860px';
+      card.style.maxWidth = '92vw';
+      card.style.border = '1px solid rgba(99,102,241,0.22)';
+      card.style.boxShadow = '0 24px 48px rgba(15,23,42,0.30)';
+      card.innerHTML =
+        '<div class="h-16 px-6 flex items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600 text-white">' +
+          '<div class="text-lg leading-none mr-2">○</div>' +
+          '<div class="flex-1 text-[34px] font-extrabold tracking-tight">编辑教师信息</div>' +
+          '<button type="button" class="db-edit-teacher-close text-[24px] leading-none opacity-80 hover:opacity-100">×</button>' +
+        '</div>' +
+        '<div class="p-6 bg-slate-50/70 border-t border-indigo-100">' +
+          '<div class="rounded-xl border border-slate-200 bg-white p-5">' +
+            '<div class="text-[34px] font-bold text-slate-800 mb-4">基本身份信息</div>' +
+            '<div class="grid grid-cols-2 gap-4">' +
+              '<div>' +
+                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">用户名 <span class="text-rose-500">*</span></label>' +
+                '<input class="db-edit-username w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-slate-100 text-slate-600" type="text" readonly>' +
+              '</div>' +
+              '<div>' +
+                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">姓名 <span class="text-rose-500">*</span></label>' +
+                '<input class="db-edit-name w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="text">' +
+              '</div>' +
+              '<div>' +
+                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">新密码(留空则不修改)</label>' +
+                '<input class="db-edit-password w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="password" placeholder="输入密码">' +
+              '</div>' +
+              '<div>' +
+                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">确认密码</label>' +
+                '<input class="db-edit-confirm w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="password" placeholder="再次输入密码">' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="h-24 px-7 bg-white border-t border-slate-200 flex items-center justify-end gap-8">' +
+          '<button type="button" class="db-edit-teacher-cancel text-slate-500 text-[30px] font-semibold">取消</button>' +
+          '<button type="button" class="db-edit-teacher-save h-14 px-10 rounded-xl text-white text-[30px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-200">保存修改</button>' +
+        '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      var usernameInput = card.querySelector('.db-edit-username');
+      var nameInput = card.querySelector('.db-edit-name');
+      var passwordInput = card.querySelector('.db-edit-password');
+      var confirmInput = card.querySelector('.db-edit-confirm');
+      if (usernameInput) {
+        usernameInput.value = teacher && teacher.username ? teacher.username : '';
+      }
+      if (nameInput) {
+        nameInput.value = teacher && teacher.name ? teacher.name : '';
+      }
+
+      var closed = false;
+      function close(result) {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        if (overlay && overlay.parentElement) {
+          overlay.parentElement.removeChild(overlay);
+        }
+        resolve(result || { ok: false });
+      }
+
+      function onCancel() {
+        close({ ok: false });
+      }
+
+      function onSave() {
+        var name = nameInput ? String(nameInput.value || '').trim() : '';
+        var password = passwordInput ? String(passwordInput.value || '').trim() : '';
+        var confirmPassword = confirmInput ? String(confirmInput.value || '').trim() : '';
+
+        if (!name) {
+          window.alert('姓名不能为空。');
+          return;
+        }
+        if ((password || confirmPassword) && password !== confirmPassword) {
+          window.alert('两次密码不一致，请重新输入。');
+          return;
+        }
+        close({ ok: true, name: name, password: password });
+      }
+
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) {
+          onCancel();
+        }
+      });
+      var closeBtn = card.querySelector('.db-edit-teacher-close');
+      var cancelBtn = card.querySelector('.db-edit-teacher-cancel');
+      var saveBtn = card.querySelector('.db-edit-teacher-save');
+      if (closeBtn) closeBtn.addEventListener('click', onCancel);
+      if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+      if (saveBtn) saveBtn.addEventListener('click', onSave);
+    });
   }
 
   function getStudentTableBody() {
