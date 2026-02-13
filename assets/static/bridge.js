@@ -151,7 +151,13 @@
         '<td class="px-4 py-4"><div class="w-10 h-10 flex items-center justify-center rounded-xl font-bold shadow-sm bg-indigo-500 text-white">' + (s.studentNo || (i + 1)) + '</div></td>' +
         '<td class="px-8 py-4"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm">' + String((s.name || '?')).slice(0, 1) + '</div><span class="font-bold text-slate-900 group-hover:text-indigo-700 text-base antialiased text-sharp">' + (s.name || '-') + '</span></div></td>' +
         '<td class="px-8 py-4"><div class="inline-flex gap-1 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold border-emerald-100 text-emerald-600 bg-emerald-50/30">在读</div></td>' +
-        '<td class="px-8 py-4 text-right text-xs text-slate-400">DB</td>';
+        '<td class="px-8 py-4 text-right">' +
+        '<button type="button" class="delete-student-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-rose-500 hover:bg-rose-50 h-9 w-9 rounded-xl" data-student-id="' + s.id + '" title="删除学生" aria-label="删除学生">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-minus-icon lucide-user-minus">' +
+        '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="22" x2="16" y1="11" y2="11"></line>' +
+        '</svg>' +
+        '</button>' +
+        '</td>';
       tbody.appendChild(tr);
     }
   }
@@ -159,7 +165,8 @@
   var classState = {
     initialized: false,
     classes: [],
-    tbody: null
+    tbody: null,
+    currentClassId: null
   };
 
   function normalizeText(v) {
@@ -247,6 +254,7 @@
       return;
     }
 
+    classState.currentClassId = cls.id;
     var sRes = await fetch(API_BASE + '/api/classes/' + cls.id + '/students');
     if (!sRes.ok) {
       return;
@@ -268,6 +276,53 @@
         gradeBadge.textContent = cls.grade || '';
       }
     }
+  }
+
+  function bindStudentDeleteHandler() {
+    if (document.body.getAttribute('data-db-delete-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-delete-bound', '1');
+
+    document.body.addEventListener('click', async function (event) {
+      var btn = event.target.closest('.delete-student-btn');
+      if (!btn || !classState.currentClassId) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+
+      var studentId = Number(btn.getAttribute('data-student-id'));
+      if (!Number.isInteger(studentId) || studentId <= 0) {
+        return;
+      }
+
+      var confirmed = window.confirm('确认删除该学生？此操作不可恢复。');
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        var res = await fetch(API_BASE + '/api/students/' + studentId, { method: 'DELETE' });
+        if (!res.ok) {
+          return;
+        }
+
+        var cls = null;
+        for (var i = 0; i < classState.classes.length; i += 1) {
+          if (Number(classState.classes[i].id) === Number(classState.currentClassId)) {
+            cls = classState.classes[i];
+            break;
+          }
+        }
+        if (!cls && classState.classes.length) {
+          cls = classState.classes[0];
+        }
+        if (cls) {
+          await loadStudentsByClass(cls);
+        }
+      } catch (_) {}
+    }, true);
   }
 
   async function runClassPageOverride() {
@@ -293,6 +348,7 @@
         classState.classes = [];
         classState.tbody = tbody;
         bindClassSwitchHandler();
+        bindStudentDeleteHandler();
         return;
       }
 
@@ -301,6 +357,7 @@
       classState.initialized = true;
       updateClassCardsMetadata(classes);
       bindClassSwitchHandler();
+      bindStudentDeleteHandler();
       await loadStudentsByClass(classes[0]);
     } catch (_) {}
   }

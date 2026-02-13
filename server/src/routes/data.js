@@ -38,6 +38,31 @@ export default async function dataRoutes(fastify) {
     return rows;
   });
 
+  fastify.delete('/api/students/:id', async (request, reply) => {
+    const studentId = Number(request.params.id);
+    if (!Number.isInteger(studentId) || studentId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_STUDENT_ID' });
+    }
+
+    const existing = db.prepare('SELECT id FROM students WHERE id = ?').get(studentId);
+    if (!existing) {
+      return reply.code(404).send({ error: 'STUDENT_NOT_FOUND' });
+    }
+
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM attendance WHERE student_id = ?').run(studentId);
+      db.prepare('DELETE FROM evaluations WHERE student_id = ?').run(studentId);
+      db.prepare('DELETE FROM students WHERE id = ?').run(studentId);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { ok: true, id: studentId };
+  });
+
   fastify.get('/api/attendance', { preHandler: requireAuth }, async (request, reply) => {
     const classId = Number(request.query.classId);
     const date = String(request.query.date || '').trim();
