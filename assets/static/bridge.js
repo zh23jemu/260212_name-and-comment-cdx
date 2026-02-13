@@ -109,6 +109,117 @@
     return (document.title || '').indexOf('班级学生管理') >= 0;
   }
 
+  function detectAdminDashboardPage() {
+    return (document.title || '').indexOf('管理后台仪表盘') >= 0;
+  }
+
+  function findCardValueByTitle(titleText) {
+    var titles = Array.prototype.slice.call(document.querySelectorAll('h3'));
+    for (var i = 0; i < titles.length; i += 1) {
+      var t = (titles[i].innerText || '').replace(/\s+/g, '');
+      if (t.indexOf(titleText) >= 0) {
+        var card = titles[i].closest('div.rounded-xl, div.rounded-lg, div.border');
+        if (!card) {
+          card = titles[i].parentElement && titles[i].parentElement.parentElement ? titles[i].parentElement.parentElement : null;
+        }
+        if (!card) {
+          continue;
+        }
+        var valueEl = card.querySelector('div.text-3xl.font-bold.tracking-tight');
+        if (valueEl) {
+          return valueEl;
+        }
+      }
+    }
+    return null;
+  }
+
+  function findDashboardRefreshButton() {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    for (var i = 0; i < buttons.length; i += 1) {
+      var txt = (buttons[i].innerText || '').replace(/\s+/g, '');
+      if (txt.indexOf('刷新数据') >= 0) {
+        return buttons[i];
+      }
+    }
+    return null;
+  }
+
+  async function fetchDashboardStats() {
+    var classes = [];
+    try {
+      var cRes = await fetch(API_BASE + '/api/classes');
+      if (cRes.ok) {
+        classes = await cRes.json();
+      }
+    } catch (_) {}
+
+    if (!Array.isArray(classes)) {
+      classes = [];
+    }
+
+    var students = 0;
+    for (var i = 0; i < classes.length; i += 1) {
+      var cid = classes[i] && classes[i].id;
+      if (!cid) {
+        continue;
+      }
+      try {
+        var sRes = await fetch(API_BASE + '/api/classes/' + cid + '/students');
+        if (!sRes.ok) {
+          continue;
+        }
+        var arr = await sRes.json();
+        if (Array.isArray(arr)) {
+          students += arr.length;
+        }
+      } catch (_) {}
+    }
+
+    return {
+      classes: classes.length,
+      students: students
+    };
+  }
+
+  async function runDashboardOverride() {
+    if (!detectAdminDashboardPage() || !API_BASE) {
+      return;
+    }
+
+    try {
+      var stats = await fetchDashboardStats();
+      var studentEl = findCardValueByTitle('学生总数');
+      if (studentEl) {
+        studentEl.textContent = String(stats.students);
+      }
+    } catch (_) {}
+  }
+
+  function bindDashboardRefreshHandler() {
+    if (document.body.getAttribute('data-db-dashboard-refresh-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-dashboard-refresh-bound', '1');
+
+    document.body.addEventListener('click', function (event) {
+      if (!detectAdminDashboardPage()) {
+        return;
+      }
+      var btn = event.target.closest('button');
+      if (!btn) {
+        return;
+      }
+      var refreshBtn = findDashboardRefreshButton();
+      if (!refreshBtn || btn !== refreshBtn) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      runDashboardOverride();
+    }, true);
+  }
+
   function getStudentTableBody() {
     return document.querySelector('tbody[data-source-file*="StudentClassManagementPage.vue"][class*="divide-y"]');
   }
@@ -1346,6 +1457,9 @@
 
   bootstrapFromServer();
   mirrorWholeStorage();
+  bindDashboardRefreshHandler();
+  setTimeout(function () { runDashboardOverride(); }, 700);
+  setTimeout(function () { runDashboardOverride(); }, 1800);
   setTimeout(function () { runClassPageOverride(); }, 900);
   setTimeout(function () { runClassPageOverride(); }, 2200);
   setTimeout(function () { runClassPageOverride(); }, 3800);
@@ -1354,6 +1468,7 @@
     namespace: NAMESPACE,
     apiBase: API_BASE,
     sync: mirrorWholeStorage,
-    overrideClassPage: runClassPageOverride
+    overrideClassPage: runClassPageOverride,
+    overrideDashboardPage: runDashboardOverride
   };
 })();
