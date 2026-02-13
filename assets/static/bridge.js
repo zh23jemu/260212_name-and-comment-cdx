@@ -218,6 +218,30 @@
     }, true);
   }
 
+  function updateClassCardsMetadata(classes) {
+    var cards = Array.prototype.slice.call(document.querySelectorAll('div.p-4.rounded-xl.border-2.cursor-pointer'));
+    if (!cards.length || !classes.length) {
+      return;
+    }
+
+    for (var i = 0; i < cards.length; i += 1) {
+      var cls = classes[i];
+      if (!cls) {
+        continue;
+      }
+
+      var titleNode = cards[i].querySelector('p.font-extrabold');
+      if (titleNode && cls.name) {
+        titleNode.textContent = cls.name;
+      }
+
+      var gradeNode = cards[i].querySelector('p.text-\\[10px\\]');
+      if (gradeNode) {
+        gradeNode.textContent = cls.grade || '';
+      }
+    }
+  }
+
   async function loadStudentsByClass(cls) {
     if (!cls || !classState.tbody) {
       return;
@@ -234,6 +258,15 @@
     var title = document.querySelector('h2.text-3xl');
     if (title && cls.name) {
       title.textContent = cls.name;
+    }
+
+    // Update top grade badge near class title (e.g. "一年级" -> "高一").
+    var titlePanel = title ? title.parentElement : null;
+    if (titlePanel) {
+      var gradeBadge = titlePanel.querySelector('div.inline-flex.gap-1.items-center.rounded-full.border.px-2\\.5.py-0\\.5.text-xs.font-semibold');
+      if (gradeBadge) {
+        gradeBadge.textContent = cls.grade || '';
+      }
     }
   }
 
@@ -266,6 +299,7 @@
       classState.classes = classes;
       classState.tbody = tbody;
       classState.initialized = true;
+      updateClassCardsMetadata(classes);
       bindClassSwitchHandler();
       await loadStudentsByClass(classes[0]);
     } catch (_) {}
