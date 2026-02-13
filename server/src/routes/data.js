@@ -16,6 +16,12 @@ const evaluationSchema = z.object({
   tags: z.array(z.string()).default([]),
   comment: z.string().optional().default('')
 });
+const createStudentSchema = z.object({
+  classId: z.number().int().positive(),
+  name: z.string().min(1),
+  studentNo: z.string().optional().default(''),
+  status: z.string().optional().default('active')
+});
 
 export default async function dataRoutes(fastify) {
   fastify.get('/api/classes', async () => {
@@ -62,6 +68,35 @@ export default async function dataRoutes(fastify) {
     }
 
     return { ok: true, id: studentId, deleted: true };
+  });
+
+  fastify.post('/api/students', async (request, reply) => {
+    const parsed = createStudentSchema.safeParse(request.body || {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_REQUEST', details: parsed.error.flatten() });
+    }
+
+    const body = parsed.data;
+    const cls = db.prepare('SELECT id FROM classes WHERE id = ?').get(body.classId);
+    if (!cls) {
+      return reply.code(404).send({ error: 'CLASS_NOT_FOUND' });
+    }
+
+    if (body.studentNo) {
+      const duplicate = db.prepare(
+        'SELECT id FROM students WHERE class_id = ? AND student_no = ? LIMIT 1'
+      ).get(body.classId, body.studentNo);
+      if (duplicate) {
+        return reply.code(409).send({ error: 'DUPLICATE_STUDENT_NO' });
+      }
+    }
+
+    const result = db.prepare(
+      `INSERT INTO students (class_id, student_no, name, status)
+       VALUES (?, ?, ?, ?)`
+    ).run(body.classId, body.studentNo || '', body.name, body.status || 'active');
+
+    return { ok: true, id: result.lastInsertRowid };
   });
 
   fastify.get('/api/attendance', { preHandler: requireAuth }, async (request, reply) => {

@@ -326,6 +326,140 @@
     }, true);
   }
 
+  function bindStudentAddHandler() {
+    if (document.body.getAttribute('data-db-add-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-add-bound', '1');
+
+    function findDialogRoot(fromEl) {
+      var node = fromEl;
+      while (node && node !== document.body) {
+        if (
+          node.getAttribute &&
+          (node.getAttribute('role') === 'dialog' ||
+            (node.className && String(node.className).indexOf('fixed') >= 0 && String(node.className).indexOf('inset') >= 0))
+        ) {
+          return node;
+        }
+        node = node.parentElement;
+      }
+
+      var overlays = Array.prototype.slice.call(document.querySelectorAll('div'));
+      for (var i = 0; i < overlays.length; i += 1) {
+        var txt = overlays[i].innerText || '';
+        if (txt.indexOf('录入新学生') >= 0 && txt.indexOf('保存记录') >= 0) {
+          return overlays[i];
+        }
+      }
+      return document.body;
+    }
+
+    function readStudentFormValues(root) {
+      var seatInput =
+        root.querySelector('input[type="number"]') ||
+        root.querySelector('input[placeholder*="座号"]') ||
+        root.querySelector('input[inputmode="numeric"]');
+
+      var textInputs = Array.prototype.slice.call(
+        root.querySelectorAll('input[type="text"], input[type="search"], input:not([type]), input[type="url"]')
+      );
+
+      var nameInput = null;
+      for (var i = 0; i < textInputs.length; i += 1) {
+        var ph = String(textInputs[i].getAttribute('placeholder') || '');
+        if (ph.indexOf('姓名') >= 0 || ph.indexOf('张') >= 0 || ph.indexOf('例如') >= 0) {
+          nameInput = textInputs[i];
+          break;
+        }
+      }
+      if (!nameInput && textInputs.length) {
+        nameInput = textInputs[0];
+      }
+
+      return {
+        studentNo: seatInput ? String(seatInput.value || '').trim() : '',
+        name: nameInput ? String(nameInput.value || '').trim() : ''
+      };
+    }
+
+    document.body.addEventListener('click', async function (event) {
+      if (!classState.currentClassId) {
+        return;
+      }
+
+      var btn = event.target.closest('button');
+      if (!btn) {
+        return;
+      }
+      var txt = (btn.innerText || '').replace(/\s+/g, '');
+      if (txt.indexOf('保存记录') < 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      var root = findDialogRoot(btn);
+      var form = readStudentFormValues(root);
+      if (!form.name) {
+        window.alert('请输入学生姓名');
+        return;
+      }
+
+      try {
+        var res = await fetch(API_BASE + '/api/students', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            classId: classState.currentClassId,
+            name: form.name,
+            studentNo: form.studentNo,
+            status: 'active'
+          })
+        });
+
+        if (res.status === 409) {
+          window.alert('座号已存在，请更换后重试。');
+          return;
+        }
+        if (!res.ok) {
+          window.alert('添加学生失败，请稍后重试。');
+          return;
+        }
+
+        var cls = null;
+        for (var i = 0; i < classState.classes.length; i += 1) {
+          if (Number(classState.classes[i].id) === Number(classState.currentClassId)) {
+            cls = classState.classes[i];
+            break;
+          }
+        }
+        if (cls) {
+          await loadStudentsByClass(cls);
+        }
+
+        // Try to close dialog via cancel/close button if present.
+        var closeBtn = root.querySelector('button[aria-label*="关闭"], button[aria-label*="close"]');
+        if (!closeBtn) {
+          var buttons = Array.prototype.slice.call(root.querySelectorAll('button'));
+          for (var j = 0; j < buttons.length; j += 1) {
+            var btxt = (buttons[j].innerText || '').replace(/\s+/g, '');
+            if (btxt.indexOf('取消') >= 0 || btxt === '×' || btxt === '✕') {
+              closeBtn = buttons[j];
+              break;
+            }
+          }
+        }
+        if (closeBtn) {
+          closeBtn.click();
+        }
+      } catch (_) {
+        window.alert('添加学生失败，请检查网络后重试。');
+      }
+    }, true);
+  }
+
   async function runClassPageOverride() {
     if (!detectClassManagementPage() || !API_BASE) {
       return;
@@ -350,6 +484,7 @@
         classState.tbody = tbody;
         bindClassSwitchHandler();
         bindStudentDeleteHandler();
+        bindStudentAddHandler();
         return;
       }
 
@@ -359,6 +494,7 @@
       updateClassCardsMetadata(classes);
       bindClassSwitchHandler();
       bindStudentDeleteHandler();
+      bindStudentAddHandler();
       await loadStudentsByClass(classes[0]);
     } catch (_) {}
   }
