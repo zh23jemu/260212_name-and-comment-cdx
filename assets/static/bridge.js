@@ -989,6 +989,264 @@
     }, true);
   }
 
+  function parseCsvLine(line) {
+    var out = [];
+    var cur = '';
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i += 1) {
+      var ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cur += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+      if (ch === ',' && !inQuotes) {
+        out.push(cur);
+        cur = '';
+        continue;
+      }
+      cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+
+  function decodeCsvBuffer(arrayBuffer) {
+    var decoders = ['utf-8', 'gb18030', 'gbk'];
+    var candidates = [];
+
+    for (var i = 0; i < decoders.length; i += 1) {
+      try {
+        var text = new TextDecoder(decoders[i]).decode(arrayBuffer);
+        candidates.push(text);
+      } catch (_) {}
+    }
+
+    if (!candidates.length) {
+      return '';
+    }
+
+    function score(text) {
+      var s = 0;
+      if (text.indexOf('学生姓名') >= 0) s += 5;
+      if (text.indexOf('姓名') >= 0) s += 3;
+      if (text.indexOf('座号') >= 0) s += 5;
+      if (text.indexOf('年级') >= 0) s += 2;
+      if (text.indexOf('班级') >= 0) s += 2;
+      if (text.indexOf('\ufffd') >= 0) s -= 5;
+      return s;
+    }
+
+    var best = candidates[0];
+    var bestScore = score(best);
+    for (var j = 1; j < candidates.length; j += 1) {
+      var sc = score(candidates[j]);
+      if (sc > bestScore) {
+        best = candidates[j];
+        bestScore = sc;
+      }
+    }
+    return best;
+  }
+
+  function parseStudentsCsvText(text) {
+    var normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    var lines = normalized.split('\n').filter(function (line) {
+      return String(line || '').trim() !== '';
+    });
+    if (!lines.length) {
+      return [];
+    }
+
+    var headers = parseCsvLine(lines[0]).map(function (h) {
+      return String(h || '').replace(/^\uFEFF/, '').trim();
+    });
+    var normalizedHeaders = headers.map(function (h) {
+      return h.replace(/\s+/g, '');
+    });
+
+    function findIndex(names) {
+      for (var i = 0; i < normalizedHeaders.length; i += 1) {
+        for (var j = 0; j < names.length; j += 1) {
+          if (normalizedHeaders[i] === names[j]) {
+            return i;
+          }
+        }
+      }
+      return -1;
+    }
+
+    var seatIndex = findIndex(['座号', '学号', 'studentNo', 'studentno', 'seatNo', 'seatno']);
+    var nameIndex = findIndex(['学生姓名', '姓名', 'name', 'studentName', 'studentname']);
+    var gradeIndex = findIndex(['年级', 'grade']);
+    var classNameIndex = findIndex(['班级名称', '班级', 'className', 'classname']);
+
+    // Fallback: two-column CSV like "座号,学生姓名" or "学生姓名,座号".
+    if (nameIndex < 0 && headers.length >= 2) {
+      nameIndex = 1;
+      if (normalizedHeaders[0] && normalizedHeaders[0].indexOf('姓名') >= 0) {
+        nameIndex = 0;
+      }
+    }
+    if (seatIndex < 0 && headers.length >= 2) {
+      seatIndex = nameIndex === 0 ? 1 : 0;
+    }
+
+    var rows = [];
+    for (var k = 1; k < lines.length; k += 1) {
+      var cols = parseCsvLine(lines[k]);
+      var name = nameIndex >= 0 ? String(cols[nameIndex] || '').trim() : '';
+      var studentNo = seatIndex >= 0 ? String(cols[seatIndex] || '').trim() : '';
+      var grade = gradeIndex >= 0 ? String(cols[gradeIndex] || '').trim() : '';
+      var className = classNameIndex >= 0 ? String(cols[classNameIndex] || '').trim() : '';
+      if (!name && !studentNo) {
+        continue;
+      }
+      rows.push({
+        name: name,
+        studentNo: studentNo,
+        grade: grade,
+        className: className
+      });
+    }
+    return rows;
+  }
+
+  function bindBatchImportHandler() {
+    if (document.body.getAttribute('data-db-batch-import-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-batch-import-bound', '1');
+
+    var fileInput = document.getElementById('db-batch-import-input');
+    if (!fileInput) {
+      fileInput = document.createElement('input');
+      fileInput.id = 'db-batch-import-input';
+      fileInput.type = 'file';
+      fileInput.accept = '.csv,text/csv,application/vnd.ms-excel';
+      fileInput.style.display = 'none';
+      document.body.appendChild(fileInput);
+    }
+
+    document.body.addEventListener('click', function (event) {
+      if (!detectClassManagementPage()) {
+        return;
+      }
+      var btn = event.target.closest('button');
+      if (!btn) {
+        return;
+      }
+      var txt = (btn.innerText || '').replace(/\s+/g, '');
+      if (txt.indexOf('批量导入') < 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!classState.currentClassId) {
+        window.alert('请先选择班级后再导入。');
+        return;
+      }
+
+      fileInput.value = '';
+      fileInput.click();
+    }, true);
+
+    fileInput.addEventListener('change', async function () {
+      if (!classState.currentClassId || !fileInput.files || !fileInput.files[0]) {
+        return;
+      }
+
+      var cls = null;
+      for (var i = 0; i < classState.classes.length; i += 1) {
+        if (Number(classState.classes[i].id) === Number(classState.currentClassId)) {
+          cls = classState.classes[i];
+          break;
+        }
+      }
+      if (!cls) {
+        window.alert('未找到当前班级，请刷新页面后重试。');
+        return;
+      }
+
+      try {
+        var file = fileInput.files[0];
+        var arrayBuffer = await file.arrayBuffer();
+        var text = decodeCsvBuffer(arrayBuffer);
+        var rows = parseStudentsCsvText(text);
+        if (!rows.length) {
+          window.alert('CSV 解析失败或没有可导入的数据，请检查文件格式。');
+          return;
+        }
+
+        var requested = 0;
+        var inserted = 0;
+        var duplicated = 0;
+        var skipped = 0;
+        var failed = 0;
+
+        for (var r = 0; r < rows.length; r += 1) {
+          var row = rows[r];
+          if (!row.name) {
+            skipped += 1;
+            continue;
+          }
+
+          if (row.className && String(row.className).trim() !== String(cls.name || '').trim()) {
+            skipped += 1;
+            continue;
+          }
+          if (row.grade && String(row.grade).trim() !== String(cls.grade || '').trim()) {
+            skipped += 1;
+            continue;
+          }
+
+          requested += 1;
+          try {
+            var res = await fetch(API_BASE + '/api/students', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                classId: classState.currentClassId,
+                name: row.name,
+                studentNo: row.studentNo || '',
+                status: 'active'
+              })
+            });
+            if (res.status === 409) {
+              duplicated += 1;
+            } else if (res.ok) {
+              inserted += 1;
+            } else {
+              failed += 1;
+            }
+          } catch (_) {
+            failed += 1;
+          }
+        }
+
+        await loadStudentsByClass(cls);
+        await refreshClassCounts();
+        renderClassCardsFromDb(classState.classes);
+
+        window.alert(
+          '导入完成：成功 ' + inserted +
+          '，重复座号 ' + duplicated +
+          '，跳过 ' + skipped +
+          '，失败 ' + failed +
+          '。'
+        );
+      } catch (_) {
+        window.alert('批量导入失败，请检查 CSV 编码和格式后重试。');
+      }
+    }, true);
+  }
+
   async function runClassPageOverride() {
     if (!detectClassManagementPage() || !API_BASE) {
       return;
@@ -1016,11 +1274,12 @@
         bindClassEditDeleteHandler();
         bindStudentDeleteHandler();
         bindStudentAddHandler();
-        bindStudentCheckboxHandler();
-        bindBatchDeleteHandler();
-        bindClassCreateHandler();
-        ensureBatchDeleteButton();
-        updateBatchDeleteButtonState();
+      bindStudentCheckboxHandler();
+      bindBatchDeleteHandler();
+      bindBatchImportHandler();
+      bindClassCreateHandler();
+      ensureBatchDeleteButton();
+      updateBatchDeleteButtonState();
         return;
       }
 
@@ -1052,6 +1311,7 @@
       bindStudentAddHandler();
       bindStudentCheckboxHandler();
       bindBatchDeleteHandler();
+      bindBatchImportHandler();
       ensureBatchDeleteButton();
       ensureClassListObserver();
       var target = classes[0];
