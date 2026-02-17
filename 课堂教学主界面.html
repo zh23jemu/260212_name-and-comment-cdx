@@ -1,197 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh">
 
-                <!DOCTYPE html>
-                <html lang="zh">
-                <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <meta name="color-scheme" content="light">
-                  <meta name="supported-color-schemes" content="light">
-                  <title>课堂教学主界面</title>
-                  <style>
-                    *,
-                    *::before,
-                    *::after {
-                      box-sizing: border-box;
-                      margin: 0;
-                    }
-                    .iframe-outer {
-                      position: fixed;
-                      top: 0;
-                      left: 0;
-                      bottom: 0;
-                      right: 0;
-                      display: flex;
-                      justify-content: center;
-                      background-color: #E0E0E0;
-                    }
-                    .iframe-wrapper {
-                      width: 100%;
-                      height: 100%;
-                      margin: 0 auto;
-                      transform-origin: center top;
-                      flex-shrink: 0;
-                    }
-                    #dynamicIframe {
-                      border: none;
-                      width: 100%;
-                      height: 100%;
-                    }
-                  </style>
-                  <script>
-                const width = 1920
-                const height = 1080
-                const resolutionRatio = width && height ? width / height : 1
-                const pageNameMap = {
-                  'login_page': '教师登录页',
-    'teacher_classroom_main': '课堂教学主界面',
-    'report_view_page': '点名与评价统计页',
-    'student_selection_page': '学生评价选择页',
-    'admin_dashboard': '管理后台仪表盘',
-    'teacher_management': '教师与权限管理',
-    'student_class_management': '班级学生管理',
-    'data_statistics': '数据汇总报表',
-    'data_statistics_visual': '实时数据看板'
-                }
-                const allPageIds = ["login_page","teacher_classroom_main","report_view_page","student_selection_page","admin_dashboard","teacher_management","student_class_management","data_statistics","data_statistics_visual"]
-                const allFormatPageIdsMap = {"login_page":"login-page","teacher_classroom_main":"teacher-classroom-main","report_view_page":"report-view-page","student_selection_page":"student-selection-page","admin_dashboard":"admin-dashboard","teacher_management":"teacher-management","student_class_management":"student-class-management","data_statistics":"data-statistics","data_statistics_visual":"data-statistics-visual"}
-                const IFRAME_MESSAGE_TYPE = {
-                  iframeNavigation: 'iframeNavigation',
-                }
-                const safeAddEventListener = function Tc(e,t,r,n=!1){e.removeEventListener(t,r,n),e.addEventListener(t,r,n)}
-                const processOnclick = (e,t,r)=>{if(r){const n=Rw(t);if(n.methodName&&Lp(n.methodName,r))return;e.preventDefault(),e.stopPropagation();const s=n.args||[],i=(s==null?void 0:s.find(u=>u))||"";i&&Mp(i)}}
-                const checkIframeMethod = (e,t)=>{try{return typeof t[e]=="function"||typeof t[e]=="function"}catch(r){return!1}}
-                const postIframeMessage = (targetPageId) => {
-                  window.parent.postMessage({
-                    type: IFRAME_MESSAGE_TYPE.iframeNavigation,
-                    targetPageId,
-                  })
-                }
-                const handleIframeLinkClick = (event) => {
-                  const dynamicIframe = document.querySelector('#dynamicIframe')
-                  if (!dynamicIframe?.contentWindow) {
-                    return
-                  }
-                  const link = event.target.closest('a')
-                  const target = event.target
-                  if (link) {
-                    const href = link.getAttribute('href')
-                    const onclick = link.getAttribute('onclick')
-                    if (href && href !== '#' && !href.startsWith('javascript:')) {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      const targetPageId = getKeyByValueObj(allFormatPageIdsMap, href)
-                      if (targetPageId) {
-                        postIframeMessage(targetPageId)
-                      }
-                      return
-                    }
-                    if (onclick) {
-                      processOnclick(event, onclick, iframe.contentWindow, allFormatPageIdsMap)
-                    } else {
-                      event.preventDefault()
-                      event.stopPropagation()
-                    }
-                    return
-                  }
-                  const onclick = target.getAttribute('onclick')
-                  if (onclick) {
-                    processOnclick(event, onclick, iframe.contentWindow, allFormatPageIdsMap)
-                  }
-                }
-                function stringExt(link) {
-                  let s = String(link || '')
-                  s = (s.split('#')[0] || '')
-                  s = (s.split('?')[0] || '')
-                  s = s.trim()
-                  s = s.split('/').filter(Boolean).pop() || ''
-                  const lower = s.toLowerCase()
-                  if (lower.endsWith('.html') || lower.endsWith('.php') || lower.endsWith('.aspx')) {
-                    s = s.slice(0, s.lastIndexOf('.'))
-                  }
-                  return s
-                }
-                function formatHref(href) {
-                  if (!href) {
-                    return ''
-                  }
-                  try {
-                    const url = new URL(href, window.location.href)
-                    const pathname = url.pathname || ''
-                    return stringExt(pathname)
-                  } catch {
-                    return stringExt(href)
-                  }
-                }
-                function getKeyByValueObj(obj, value) {
-                  const newValue = formatHref(value)
-                  const keyFind = Object.keys(obj).find(k => k === newValue)
-                  if (keyFind) {
-                    return keyFind
-                  }
-                  return Object.keys(obj).find(k => obj[k] === newValue)
-                }
-                function setIframeSize(w, h) {
-                  const currentContainerRadio = w / h
-                  let widthValue = w
-                  let heightValue = h
-                  let zoom = 1
-                  if (currentContainerRadio > resolutionRatio) {
-                    widthValue = h * resolutionRatio
-                    heightValue = h
-                  } else {
-                    widthValue = w
-                    heightValue = w / resolutionRatio
-                  }
-                  zoom = width ? widthValue / width : 1
-                  return {
-                    width: widthValue / zoom + 'px',
-                    height: heightValue / zoom + 'px',
-                    zoom,
-                  }
-                }
-                function adjustIframeSize() {
-                  const iframeWrapper = document.querySelector(".iframe-wrapper")
-                  const { width, height, zoom } = setIframeSize(window.innerWidth, window.innerHeight)
-                  iframeWrapper.style.height = height
-                  iframeWrapper.style.width = width
-                  iframeWrapper.style.transform = 'scale(' + zoom + ')'
-                }
-                function sanitizeFilename(name) {
-                  return name.replace(/[\/:*?"<>|]/g, '_')
-                }
-                function handlePostMessage(event) {
-                  if (!event.data) {
-                    return
-                  }
-                  const { type, targetPageId } = event.data
-                  const targetPageName = pageNameMap[targetPageId]
-                  if (type === "iframeNavigation" && targetPageId && targetPageName) {
-                    window.location.href = targetPageName + '.html'
-                  }
-                }
-                function setupIframeEvents() {
-                  const iframe = document.getElementById('dynamicIframe')
-                  if (iframe && iframe.contentWindow && iframe.contentWindow.document) {
-                    safeAddEventListener(iframe.contentWindow.document, 'click', handleIframeLinkClick, true)
-                  } else {
-                    setTimeout(setupIframeEvents, 100)
-                  }
-                }
-                window.addEventListener('message', handlePostMessage)
-                window.onload = function() {
-                  adjustIframeSize()
-                  setupIframeEvents()
-                }
-                window.onresize = adjustIframeSize
-                window.onunload = () => {
-                  window.removeEventListener('message', handlePostMessage)
-                }
-              </script>
-                </head>
-                <body>
-                  <div class="iframe-outer">
-                    <div class="iframe-wrapper">
-                      <iframe id="dynamicIframe" srcdoc='<html data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="11" data-source-line-end="21" lang="en"><head data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="12" data-source-line-end="17"><script>(function(){
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>课堂教学主界面</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+    }
+
+    .iframe-outer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      background-color: #E0E0E0;
+    }
+
+    .iframe-wrapper {
+      width: 100%;
+      height: 100%;
+      margin: 0 auto;
+      transform-origin: center top;
+      flex-shrink: 0;
+    }
+
+    #dynamicIframe {
+      border: none;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+  <script>
+    const width = 1920
+    const height = 1080
+    const resolutionRatio = width && height ? width / height : 1
+    const pageNameMap = {
+      'login_page': '教师登录页',
+      'teacher_classroom_main': '课堂教学主界面',
+      'report_view_page': '点名与评价统计页',
+      'student_selection_page': '学生评价选择页',
+      'admin_dashboard': '管理后台仪表盘',
+      'teacher_management': '教师与权限管理',
+      'student_class_management': '班级学生管理',
+      'data_statistics': '数据汇总报表',
+      'data_statistics_visual': '实时数据看板'
+    }
+    const allPageIds = ["login_page", "teacher_classroom_main", "report_view_page", "student_selection_page", "admin_dashboard", "teacher_management", "student_class_management", "data_statistics", "data_statistics_visual"]
+    const allFormatPageIdsMap = { "login_page": "login-page", "teacher_classroom_main": "teacher-classroom-main", "report_view_page": "report-view-page", "student_selection_page": "student-selection-page", "admin_dashboard": "admin-dashboard", "teacher_management": "teacher-management", "student_class_management": "student-class-management", "data_statistics": "data-statistics", "data_statistics_visual": "data-statistics-visual" }
+    const IFRAME_MESSAGE_TYPE = {
+      iframeNavigation: 'iframeNavigation',
+    }
+    const safeAddEventListener = function Tc(e, t, r, n = !1) { e.removeEventListener(t, r, n), e.addEventListener(t, r, n) }
+    const processOnclick = (e, t, r) => { if (r) { const n = Rw(t); if (n.methodName && Lp(n.methodName, r)) return; e.preventDefault(), e.stopPropagation(); const s = n.args || [], i = (s == null ? void 0 : s.find(u => u)) || ""; i && Mp(i) } }
+    const checkIframeMethod = (e, t) => { try { return typeof t[e] == "function" || typeof t[e] == "function" } catch (r) { return !1 } }
+    const postIframeMessage = (targetPageId) => {
+      window.parent.postMessage({
+        type: IFRAME_MESSAGE_TYPE.iframeNavigation,
+        targetPageId,
+      })
+    }
+    const handleIframeLinkClick = (event) => {
+      const dynamicIframe = document.querySelector('#dynamicIframe')
+      if (!dynamicIframe?.contentWindow) {
+        return
+      }
+      const link = event.target.closest('a')
+      const target = event.target
+      if (link) {
+        const href = link.getAttribute('href')
+        const onclick = link.getAttribute('onclick')
+        if (href && href !== '#' && !href.startsWith('javascript:')) {
+          event.preventDefault()
+          event.stopPropagation()
+          const targetPageId = getKeyByValueObj(allFormatPageIdsMap, href)
+          if (targetPageId) {
+            postIframeMessage(targetPageId)
+          }
+          return
+        }
+        if (onclick) {
+          processOnclick(event, onclick, iframe.contentWindow, allFormatPageIdsMap)
+        } else {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
+      const onclick = target.getAttribute('onclick')
+      if (onclick) {
+        processOnclick(event, onclick, iframe.contentWindow, allFormatPageIdsMap)
+      }
+    }
+    function stringExt(link) {
+      let s = String(link || '')
+      s = (s.split('#')[0] || '')
+      s = (s.split('?')[0] || '')
+      s = s.trim()
+      s = s.split('/').filter(Boolean).pop() || ''
+      const lower = s.toLowerCase()
+      if (lower.endsWith('.html') || lower.endsWith('.php') || lower.endsWith('.aspx')) {
+        s = s.slice(0, s.lastIndexOf('.'))
+      }
+      return s
+    }
+    function formatHref(href) {
+      if (!href) {
+        return ''
+      }
+      try {
+        const url = new URL(href, window.location.href)
+        const pathname = url.pathname || ''
+        return stringExt(pathname)
+      } catch {
+        return stringExt(href)
+      }
+    }
+    function getKeyByValueObj(obj, value) {
+      const newValue = formatHref(value)
+      const keyFind = Object.keys(obj).find(k => k === newValue)
+      if (keyFind) {
+        return keyFind
+      }
+      return Object.keys(obj).find(k => obj[k] === newValue)
+    }
+    function setIframeSize(w, h) {
+      const currentContainerRadio = w / h
+      let widthValue = w
+      let heightValue = h
+      let zoom = 1
+      if (currentContainerRadio > resolutionRatio) {
+        widthValue = h * resolutionRatio
+        heightValue = h
+      } else {
+        widthValue = w
+        heightValue = w / resolutionRatio
+      }
+      zoom = width ? widthValue / width : 1
+      return {
+        width: widthValue / zoom + 'px',
+        height: heightValue / zoom + 'px',
+        zoom,
+      }
+    }
+    function adjustIframeSize() {
+      const iframeWrapper = document.querySelector(".iframe-wrapper")
+      const { width, height, zoom } = setIframeSize(window.innerWidth, window.innerHeight)
+      iframeWrapper.style.height = height
+      iframeWrapper.style.width = width
+      iframeWrapper.style.transform = 'scale(' + zoom + ')'
+    }
+    function sanitizeFilename(name) {
+      return name.replace(/[\/:*?"<>|]/g, '_')
+    }
+    function handlePostMessage(event) {
+      if (!event.data) {
+        return
+      }
+      const { type, targetPageId } = event.data
+      const targetPageName = pageNameMap[targetPageId]
+      if (type === "iframeNavigation" && targetPageId && targetPageName) {
+        window.location.href = targetPageName + '.html'
+      }
+    }
+    function setupIframeEvents() {
+      const iframe = document.getElementById('dynamicIframe')
+      if (iframe && iframe.contentWindow && iframe.contentWindow.document) {
+        safeAddEventListener(iframe.contentWindow.document, 'click', handleIframeLinkClick, true)
+      } else {
+        setTimeout(setupIframeEvents, 100)
+      }
+    }
+    window.addEventListener('message', handlePostMessage)
+    window.onload = function () {
+      adjustIframeSize()
+      setupIframeEvents()
+    }
+    window.onresize = adjustIframeSize
+    window.onunload = () => {
+      window.removeEventListener('message', handlePostMessage)
+    }
+  </script>
+</head>
+
+<body>
+  <div class="iframe-outer">
+    <div class="iframe-wrapper">
+      <iframe id="dynamicIframe" srcdoc='<html data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="11" data-source-line-end="21" lang="en"><head data-source-file="src/layouts/BaseLayout.astro" data-source-line-start="12" data-source-line-end="17"><script>(function(){
       function stringExt(link) {
         let s = String(link || &#39;&#39;)
         s = (s.split(&#39;#&#39;)[0] || &#39;&#39;)
@@ -404,41 +408,44 @@
       return originalGo.apply(this, args);
     };
   </script></body></html>'></iframe>
-                    </div>
-                  </div>
+    </div>
+  </div>
 
-                <script>
-  (function () {
-    function injectBridge(iframe) {
-      try {
-        var doc = iframe && iframe.contentDocument;
-        if (!doc || !doc.head || doc.getElementById('sqlite-bridge-script')) {
-          return;
-        }
-        var script = doc.createElement('script');
-        script.id = 'sqlite-bridge-script';
-        script.src = '/assets/static/bridge.js';
-        script.defer = true;
-        doc.head.appendChild(script);
-      } catch (e) {
-        // Ignore iframe injection failures.
+  <script>
+    (function () {
+      // 1. Load bridge to parent shell
+      if (!document.getElementById('sqlite-bridge-script')) {
+        var shellScript = document.createElement('script');
+        shellScript.id = 'sqlite-bridge-script';
+        shellScript.src = '/assets/static/bridge.js';
+        shellScript.defer = true;
+        document.head.appendChild(shellScript);
       }
-    }
 
-    var iframe = document.getElementById('dynamicIframe');
-    if (iframe) {
-      iframe.addEventListener('load', function () {
+      // 2. Inject bridge to dynamic iframe
+      function injectBridge(iframe) {
+        try {
+          var doc = iframe && iframe.contentDocument;
+          if (!doc || !doc.head || doc.getElementById('sqlite-bridge-script-iframe')) {
+            return;
+          }
+          var script = doc.createElement('script');
+          script.id = 'sqlite-bridge-script-iframe';
+          script.src = '/assets/static/bridge.js';
+          script.defer = true;
+          doc.head.appendChild(script);
+        } catch (e) { }
+      }
+
+      var iframe = document.getElementById('dynamicIframe');
+      if (iframe) {
+        iframe.addEventListener('load', function () {
+          injectBridge(iframe);
+        });
         injectBridge(iframe);
-      });
-      injectBridge(iframe);
-    } else {
-      var ownScript = document.createElement('script');
-      ownScript.id = 'sqlite-bridge-script';
-      ownScript.src = '/assets/static/bridge.js';
-      ownScript.defer = true;
-      document.head.appendChild(ownScript);
-    }
-  })();
-</script></body>
-                </html>
-            
+      }
+    })();
+  </script>
+</body>
+
+</html>

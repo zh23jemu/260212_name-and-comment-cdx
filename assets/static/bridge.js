@@ -8,38 +8,27 @@
   window[BRIDGE_FLAG] = true;
 
   function getNamespace() {
-    var base = location.pathname || '/';
-    if (base === '/blank' || base === 'blank' || base === '/' || base === '') {
-      try {
-        if (document.referrer) {
-          base = new URL(document.referrer).pathname || base;
-        }
-      } catch (_) {}
-    }
-    return base.replace(/[^a-zA-Z0-9_-]/g, '_') || 'global';
+    return 'smart_classroom_global';
   }
 
   function getApiBase() {
-    if (location.origin && location.origin !== 'null') {
+    // 1. If we are explicitly configured (e.g. injected by shell), use it
+    if (window.__API_BASE__) {
+      return window.__API_BASE__;
+    }
+
+    // 2. Production Environment Check (Heuristic)
+    // If we are on a domain that is NOT localhost/127.0.0.1 and starts with http, assume same-origin API
+    if (location.protocol.startsWith('http') &&
+      location.hostname !== 'localhost' &&
+      location.hostname !== '127.0.0.1' &&
+      location.origin !== 'null') {
       return location.origin;
     }
 
-    try {
-      if (window.parent && window.parent.location && window.parent.location.origin && window.parent.location.origin !== 'null') {
-        return window.parent.location.origin;
-      }
-    } catch (_) {}
-
-    try {
-      if (document.referrer) {
-        var ref = new URL(document.referrer);
-        if (ref.origin && ref.origin !== 'null') {
-          return ref.origin;
-        }
-      }
-    } catch (_) {}
-
-    return '';
+    // 3. Local Development / File Protocol Fallback
+    // For local file usage (file://) or localhost development, always point to the known backend port.
+    return 'http://127.0.0.1:3000';
   }
 
   var NAMESPACE = getNamespace();
@@ -49,9 +38,13 @@
     if (!API_BASE) {
       return Promise.resolve(null);
     }
+    var headers = { 'Content-Type': 'application/json' };
+    var auth = getAuthHeader();
+    Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
     return fetch(API_BASE + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify(payload),
       credentials: 'include'
     }).catch(function () {
@@ -78,10 +71,13 @@
       Object.keys(items).forEach(function (key) {
         var value = items[key];
         if (typeof value === 'string') {
-          localStorage.setItem(key, value);
+          // Do not overwrite existing token/user during bootstrap to avoid race conditions
+          if (!localStorage.getItem(key)) {
+            localStorage.setItem(key, value);
+          }
         }
       });
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function mirrorWholeStorage() {
@@ -102,7 +98,7 @@
         }
       }
       sessionStorage.setItem(onceKey, '1');
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function detectClassManagementPage() {
@@ -115,6 +111,15 @@
 
   function detectAdminDashboardPage() {
     return (document.title || '').indexOf('管理后台仪表盘') >= 0;
+  }
+
+  function detectLoginPage() {
+    return (document.title || '').indexOf('教师登录') >= 0;
+  }
+
+  function getAuthHeader() {
+    var token = localStorage.getItem('token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
   }
 
   function findCardValueByTitle(titleText) {
@@ -153,18 +158,18 @@
     var classes = [];
     var teachers = [];
     try {
-      var cRes = await fetch(API_BASE + '/api/classes');
+      var cRes = await fetch(API_BASE + '/api/classes', { headers: getAuthHeader() });
       if (cRes.ok) {
         classes = await cRes.json();
       }
-    } catch (_) {}
+    } catch (_) { }
 
     try {
-      var tRes = await fetch(API_BASE + '/api/teachers');
+      var tRes = await fetch(API_BASE + '/api/teachers', { headers: getAuthHeader() });
       if (tRes.ok) {
         teachers = await tRes.json();
       }
-    } catch (_) {}
+    } catch (_) { }
 
     if (!Array.isArray(classes)) {
       classes = [];
@@ -180,7 +185,7 @@
         continue;
       }
       try {
-        var sRes = await fetch(API_BASE + '/api/classes/' + cid + '/students');
+        var sRes = await fetch(API_BASE + '/api/classes/' + cid + '/students', { headers: getAuthHeader() });
         if (!sRes.ok) {
           continue;
         }
@@ -188,7 +193,7 @@
         if (Array.isArray(arr)) {
           students += arr.length;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     return {
@@ -213,7 +218,7 @@
       if (studentEl) {
         studentEl.textContent = String(stats.students);
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function bindDashboardRefreshHandler() {
@@ -297,7 +302,7 @@
         var cls = await cRes.json();
         classesCount = Array.isArray(cls) ? cls.length : 0;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     var cards = Array.prototype.slice.call(document.querySelectorAll('p'));
     for (var i = 0; i < cards.length; i += 1) {
@@ -335,8 +340,8 @@
       var deleteBtn = t.role === 'admin'
         ? ''
         : '<button type="button" class="delete-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-rose-500 hover:bg-rose-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="删除教师">' +
-            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>' +
-          '</button>';
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>' +
+        '</button>';
       var tr = document.createElement('tr');
       tr.setAttribute('data-teacher-id', String(t.id));
       var assigned = Array.isArray(t.assignedClasses) ? t.assignedClasses : [];
@@ -356,15 +361,15 @@
         '<td class="p-4 align-middle">' + assignedHtml + '</td>' +
         '<td class="p-4 align-middle text-slate-400 font-semibold">' + (created || '-') + '</td>' +
         '<td class="p-4 align-middle text-right">' +
-          '<div class="inline-flex items-center justify-end gap-2 whitespace-nowrap">' +
-          '<button type="button" class="perm-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-amber-600 hover:bg-amber-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="管理权限">' +
-            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="m9 12 2 2 4-4"></path></svg>' +
-          '</button>' +
-          '<button type="button" class="edit-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-indigo-600 hover:bg-indigo-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="编辑基本信息">' +
-            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>' +
-          '</button>' +
-          deleteBtn +
-          '</div>' +
+        '<div class="inline-flex items-center justify-end gap-2 whitespace-nowrap">' +
+        '<button type="button" class="perm-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-amber-600 hover:bg-amber-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="管理权限">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="m9 12 2 2 4-4"></path></svg>' +
+        '</button>' +
+        '<button type="button" class="edit-teacher-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium hover:text-accent-foreground size-9 text-indigo-600 hover:bg-indigo-50 h-9 w-9 rounded-xl" data-teacher-id="' + t.id + '" title="编辑基本信息">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>' +
+        '</button>' +
+        deleteBtn +
+        '</div>' +
         '</td>';
       tbody.appendChild(tr);
     }
@@ -390,7 +395,7 @@
     }
 
     try {
-      var res = await fetch(API_BASE + '/api/teachers');
+      var res = await fetch(API_BASE + '/api/teachers', { headers: getAuthHeader() });
       if (!res.ok) {
         return;
       }
@@ -410,7 +415,7 @@
       renderTeachers(tbody, teacherState.teachers);
       updateTeacherStats(teacherState.teachers);
       updateTeacherClassStats();
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function bindTeacherCreateHandler() {
@@ -485,9 +490,13 @@
       }
 
       try {
+        var headers = { 'Content-Type': 'application/json' };
+        var auth = getAuthHeader();
+        Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
         var res = await fetch(API_BASE + '/api/teachers', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({
             username: username,
             name: name,
@@ -544,7 +553,10 @@
         return;
       }
       try {
-        var res = await fetch(API_BASE + '/api/teachers/' + teacherId, { method: 'DELETE' });
+        var res = await fetch(API_BASE + '/api/teachers/' + teacherId, {
+          method: 'DELETE',
+          headers: getAuthHeader()
+        });
         if (!res.ok) {
           window.alert('删除教师失败，请稍后重试。');
           return;
@@ -591,9 +603,13 @@
           return;
         }
         try {
+          var headers = { 'Content-Type': 'application/json' };
+          var auth = getAuthHeader();
+          Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
           var resPerm = await fetch(API_BASE + '/api/teachers/' + teacherId + '/class-permissions', {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ classIds: selectedClassIds })
           });
           if (!resPerm.ok) {
@@ -619,9 +635,13 @@
         }
 
         try {
+          var headers = { 'Content-Type': 'application/json' };
+          var auth = getAuthHeader();
+          Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
           var resEdit = await fetch(API_BASE + '/api/teachers/' + teacherId, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify(payload)
           });
           if (!resEdit.ok) {
@@ -645,11 +665,11 @@
 
       var classes = [];
       try {
-        var cRes = await fetch(API_BASE + '/api/classes');
+        var cRes = await fetch(API_BASE + '/api/classes', { headers: getAuthHeader() });
         if (cRes.ok) {
           classes = await cRes.json();
         }
-      } catch (_) {}
+      } catch (_) { }
       if (!Array.isArray(classes)) {
         classes = [];
       }
@@ -699,22 +719,22 @@
 
       card.innerHTML =
         '<div class="px-6 py-4 bg-white border-b border-indigo-100 flex items-center justify-between">' +
-          '<div class="flex items-center gap-3">' +
-            '<div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">🛡</div>' +
-            '<div>' +
-              '<div class="text-base font-extrabold text-slate-900">给' + (teacher.name || teacher.username || '教师') + ' 分配班级权限</div>' +
-              '<div class="text-sm text-indigo-500 font-semibold">当前已选 <span class="db-selected-count">0</span> 个教学班级</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="flex items-center gap-3">' +
-            '<select class="db-grade-filter h-9 px-2 rounded-lg border border-indigo-100 text-indigo-700 bg-white text-xs font-semibold">' + gradeOptions + '</select>' +
-            '<button type="button" class="db-perm-cancel text-slate-500 text-base font-semibold">取消</button>' +
-            '<button type="button" class="db-perm-save h-9 px-3 rounded-lg text-white text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md">保存</button>' +
-            '<button type="button" class="db-perm-close text-2xl leading-none text-slate-400 hover:text-slate-700">×</button>' +
-          '</div>' +
+        '<div class="flex items-center gap-3">' +
+        '<div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">🛡</div>' +
+        '<div>' +
+        '<div class="text-base font-extrabold text-slate-900">给' + (teacher.name || teacher.username || '教师') + ' 分配班级权限</div>' +
+        '<div class="text-sm text-indigo-500 font-semibold">当前已选 <span class="db-selected-count">0</span> 个教学班级</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-3">' +
+        '<select class="db-grade-filter h-9 px-2 rounded-lg border border-indigo-100 text-indigo-700 bg-white text-xs font-semibold">' + gradeOptions + '</select>' +
+        '<button type="button" class="db-perm-cancel text-slate-500 text-base font-semibold">取消</button>' +
+        '<button type="button" class="db-perm-save h-9 px-3 rounded-lg text-white text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md">保存</button>' +
+        '<button type="button" class="db-perm-close text-2xl leading-none text-slate-400 hover:text-slate-700">×</button>' +
+        '</div>' +
         '</div>' +
         '<div class="p-4 max-h-[52vh] overflow-auto">' +
-          '<div class="db-perm-groups space-y-6"></div>' +
+        '<div class="db-perm-groups space-y-6"></div>' +
         '</div>';
 
       inlineCell.appendChild(card);
@@ -739,10 +759,10 @@
             ? 'bg-gradient-to-br from-indigo-600 to-purple-500 text-white border-indigo-400 shadow-lg shadow-indigo-200'
             : 'bg-white text-indigo-900 border-indigo-100 hover:border-indigo-300 hover:shadow-sm') +
           '" data-class-id="' + cls.id + '">' +
-            '<div class="text-xs tracking-widest uppercase opacity-80 font-bold">CLASS</div>' +
-            '<div class="mt-1 text-2xl font-extrabold">' + (cls.name || ('班级' + cls.id)) + '</div>' +
-            '<div class="mt-2 h-1.5 w-10 rounded-full ' + (selected ? 'bg-white/35' : 'bg-indigo-100') + '"></div>' +
-            (selected ? '<div class="absolute right-3 top-3 text-sm">✓</div>' : '') +
+          '<div class="text-xs tracking-widest uppercase opacity-80 font-bold">CLASS</div>' +
+          '<div class="mt-1 text-2xl font-extrabold">' + (cls.name || ('班级' + cls.id)) + '</div>' +
+          '<div class="mt-2 h-1.5 w-10 rounded-full ' + (selected ? 'bg-white/35' : 'bg-indigo-100') + '"></div>' +
+          (selected ? '<div class="absolute right-3 top-3 text-sm">✓</div>' : '') +
           '</button>'
         );
       }
@@ -764,11 +784,11 @@
           }
           html +=
             '<section class="space-y-3">' +
-              '<div class="flex items-center justify-between">' +
-                '<div class="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold text-white bg-gradient-to-r from-indigo-600 to-purple-500">' + grade + '</div>' +
-                '<div class="text-xs text-indigo-300 font-semibold">共 ' + arr.length + ' 个班级</div>' +
-              '</div>' +
-              '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">' + cards + '</div>' +
+            '<div class="flex items-center justify-between">' +
+            '<div class="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold text-white bg-gradient-to-r from-indigo-600 to-purple-500">' + grade + '</div>' +
+            '<div class="text-xs text-indigo-300 font-semibold">共 ' + arr.length + ' 个班级</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">' + cards + '</div>' +
             '</section>';
         }
         groupsHost.innerHTML = html || '<div class="text-slate-400">暂无可分配班级</div>';
@@ -848,36 +868,36 @@
       card.style.boxShadow = '0 24px 48px rgba(15,23,42,0.30)';
       card.innerHTML =
         '<div class="h-16 px-6 flex items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600 text-white">' +
-          '<div class="text-lg leading-none mr-2">○</div>' +
-          '<div class="flex-1 text-[34px] font-extrabold tracking-tight">编辑教师信息</div>' +
-          '<button type="button" class="db-edit-teacher-close text-[24px] leading-none opacity-80 hover:opacity-100">×</button>' +
+        '<div class="text-lg leading-none mr-2">○</div>' +
+        '<div class="flex-1 text-[34px] font-extrabold tracking-tight">编辑教师信息</div>' +
+        '<button type="button" class="db-edit-teacher-close text-[24px] leading-none opacity-80 hover:opacity-100">×</button>' +
         '</div>' +
         '<div class="p-6 bg-slate-50/70 border-t border-indigo-100">' +
-          '<div class="rounded-xl border border-slate-200 bg-white p-5">' +
-            '<div class="text-[34px] font-bold text-slate-800 mb-4">基本身份信息</div>' +
-            '<div class="grid grid-cols-2 gap-4">' +
-              '<div>' +
-                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">用户名 <span class="text-rose-500">*</span></label>' +
-                '<input class="db-edit-username w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-slate-100 text-slate-600" type="text" readonly>' +
-              '</div>' +
-              '<div>' +
-                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">姓名 <span class="text-rose-500">*</span></label>' +
-                '<input class="db-edit-name w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="text">' +
-              '</div>' +
-              '<div>' +
-                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">新密码(留空则不修改)</label>' +
-                '<input class="db-edit-password w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="password" placeholder="输入密码">' +
-              '</div>' +
-              '<div>' +
-                '<label class="block text-[30px] font-semibold text-slate-700 mb-2">确认密码</label>' +
-                '<input class="db-edit-confirm w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="password" placeholder="再次输入密码">' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
+        '<div class="rounded-xl border border-slate-200 bg-white p-5">' +
+        '<div class="text-[34px] font-bold text-slate-800 mb-4">基本身份信息</div>' +
+        '<div class="grid grid-cols-2 gap-4">' +
+        '<div>' +
+        '<label class="block text-[30px] font-semibold text-slate-700 mb-2">用户名 <span class="text-rose-500">*</span></label>' +
+        '<input class="db-edit-username w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-slate-100 text-slate-600" type="text" readonly>' +
+        '</div>' +
+        '<div>' +
+        '<label class="block text-[30px] font-semibold text-slate-700 mb-2">姓名 <span class="text-rose-500">*</span></label>' +
+        '<input class="db-edit-name w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="text">' +
+        '</div>' +
+        '<div>' +
+        '<label class="block text-[30px] font-semibold text-slate-700 mb-2">新密码(留空则不修改)</label>' +
+        '<input class="db-edit-password w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="password" placeholder="输入密码">' +
+        '</div>' +
+        '<div>' +
+        '<label class="block text-[30px] font-semibold text-slate-700 mb-2">确认密码</label>' +
+        '<input class="db-edit-confirm w-full h-14 rounded-lg border border-slate-300 px-4 text-[24px] bg-white" type="password" placeholder="再次输入密码">' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
         '</div>' +
         '<div class="h-24 px-7 bg-white border-t border-slate-200 flex items-center justify-end gap-8">' +
-          '<button type="button" class="db-edit-teacher-cancel text-slate-500 text-[30px] font-semibold">取消</button>' +
-          '<button type="button" class="db-edit-teacher-save h-14 px-10 rounded-xl text-white text-[30px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-200">保存修改</button>' +
+        '<button type="button" class="db-edit-teacher-cancel text-slate-500 text-[30px] font-semibold">取消</button>' +
+        '<button type="button" class="db-edit-teacher-save h-14 px-10 rounded-xl text-white text-[30px] font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-200">保存修改</button>' +
         '</div>';
 
       overlay.appendChild(card);
@@ -1203,9 +1223,13 @@
       }
 
       try {
+        var headers = { 'Content-Type': 'application/json' };
+        var auth = getAuthHeader();
+        Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
         var res = await fetch(API_BASE + '/api/students/batch-delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({ studentIds: ids })
         });
         if (!res.ok) {
@@ -1253,17 +1277,17 @@
       card.setAttribute('data-class-id', String(cls.id));
       card.innerHTML =
         '<div class="flex items-start justify-between mb-2">' +
-          '<div class="flex gap-3">' +
-            '<input type="checkbox" class="class-row-checkbox w-5 h-5 mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600" data-class-id="' + cls.id + '"' + (classState.selectedClassIds[cls.id] ? ' checked' : '') + '>' +
-            '<div><p class="font-extrabold text-sm antialiased text-indigo-900">' + (cls.name || '') + '</p><p class="text-[10px] uppercase font-bold tracking-widest text-slate-500 antialiased">' + (cls.grade || '') + '</p></div>' +
-          '</div>' +
-          '<div class="inline-flex gap-1 items-center border py-0.5 text-xs rounded-lg px-2 h-5 font-bold bg-indigo-50 text-indigo-700">' + count + '</div>' +
+        '<div class="flex gap-3">' +
+        '<input type="checkbox" class="class-row-checkbox w-5 h-5 mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600" data-class-id="' + cls.id + '"' + (classState.selectedClassIds[cls.id] ? ' checked' : '') + '>' +
+        '<div><p class="font-extrabold text-sm antialiased text-indigo-900">' + (cls.name || '') + '</p><p class="text-[10px] uppercase font-bold tracking-widest text-slate-500 antialiased">' + (cls.grade || '') + '</p></div>' +
+        '</div>' +
+        '<div class="inline-flex gap-1 items-center border py-0.5 text-xs rounded-lg px-2 h-5 font-bold bg-indigo-50 text-indigo-700">' + count + '</div>' +
         '</div>' +
         (active
           ? '<div class="flex gap-4 pt-3 mt-1 border-t border-indigo-100/50">' +
-            '<button type="button" data-class-action="edit" data-class-id="' + cls.id + '" class="inline-flex items-center gap-1 text-indigo-600 text-sm font-bold">编辑</button>' +
-            '<button type="button" data-class-action="delete" data-class-id="' + cls.id + '" class="inline-flex items-center gap-1 text-rose-500 text-sm font-bold">删除</button>' +
-            '</div>'
+          '<button type="button" data-class-action="edit" data-class-id="' + cls.id + '" class="inline-flex items-center gap-1 text-indigo-600 text-sm font-bold">编辑</button>' +
+          '<button type="button" data-class-action="delete" data-class-id="' + cls.id + '" class="inline-flex items-center gap-1 text-rose-500 text-sm font-bold">删除</button>' +
+          '</div>'
           : '');
       container.appendChild(card);
     }
@@ -1392,7 +1416,7 @@
     for (var i = 0; i < classState.classes.length; i += 1) {
       var cls = classState.classes[i];
       try {
-        var res = await fetch(API_BASE + '/api/classes/' + cls.id + '/students');
+        var res = await fetch(API_BASE + '/api/classes/' + cls.id + '/students', { headers: getAuthHeader() });
         if (!res.ok) {
           counts[cls.id] = 0;
           continue;
@@ -1489,9 +1513,13 @@
       }
 
       try {
+        var headers = { 'Content-Type': 'application/json' };
+        var auth = getAuthHeader();
+        Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
         var res = await fetch(API_BASE + '/api/classes', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({ name: form.name, grade: form.grade })
         });
         if (!res.ok) {
@@ -1564,9 +1592,13 @@
         }
 
         try {
+          var headers = { 'Content-Type': 'application/json' };
+          var auth = getAuthHeader();
+          Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
           var resEdit = await fetch(API_BASE + '/api/classes/' + classId, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ name: name, grade: String(grade).trim() })
           });
           if (!resEdit.ok) {
@@ -1586,7 +1618,10 @@
           return;
         }
         try {
-          var resDel = await fetch(API_BASE + '/api/classes/' + classId, { method: 'DELETE' });
+          var resDel = await fetch(API_BASE + '/api/classes/' + classId, {
+            method: 'DELETE',
+            headers: getAuthHeader()
+          });
           if (!resDel.ok) {
             window.alert('删除班级失败，请稍后重试。');
             return;
@@ -1609,7 +1644,7 @@
 
     classState.currentClassId = cls.id;
     classState.selectedStudentIds = {};
-    var sRes = await fetch(API_BASE + '/api/classes/' + cls.id + '/students');
+    var sRes = await fetch(API_BASE + '/api/classes/' + cls.id + '/students', { headers: getAuthHeader() });
     if (!sRes.ok) {
       return;
     }
@@ -1663,7 +1698,10 @@
       }
 
       try {
-        var res = await fetch(API_BASE + '/api/students/' + studentId, { method: 'DELETE' });
+        var res = await fetch(API_BASE + '/api/students/' + studentId, {
+          method: 'DELETE',
+          headers: getAuthHeader()
+        });
         // Treat 404 as already deleted to keep UX idempotent.
         if (!res.ok && res.status !== 404) {
           return;
@@ -1682,7 +1720,7 @@
         if (cls) {
           await loadStudentsByClass(cls);
         }
-      } catch (_) {}
+      } catch (_) { }
     }, true);
   }
 
@@ -1768,9 +1806,13 @@
       }
 
       try {
+        var headers = { 'Content-Type': 'application/json' };
+        var auth = getAuthHeader();
+        Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
         var res = await fetch(API_BASE + '/api/students', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({
             classId: classState.currentClassId,
             name: form.name,
@@ -1854,7 +1896,7 @@
       try {
         var text = new TextDecoder(decoders[i]).decode(arrayBuffer);
         candidates.push(text);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     if (!candidates.length) {
@@ -2039,9 +2081,13 @@
 
           requested += 1;
           try {
+            var headers = { 'Content-Type': 'application/json' };
+            var auth = getAuthHeader();
+            Object.keys(auth).forEach(function (k) { headers[k] = auth[k]; });
+
             var res = await fetch(API_BASE + '/api/students', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: headers,
               body: JSON.stringify({
                 classId: classState.currentClassId,
                 name: row.name,
@@ -2089,7 +2135,7 @@
     }
 
     try {
-      var cRes = await fetch(API_BASE + '/api/classes');
+      var cRes = await fetch(API_BASE + '/api/classes', { headers: getAuthHeader() });
       if (!cRes.ok) {
         return;
       }
@@ -2105,12 +2151,12 @@
         bindClassEditDeleteHandler();
         bindStudentDeleteHandler();
         bindStudentAddHandler();
-      bindStudentCheckboxHandler();
-      bindBatchDeleteHandler();
-      bindBatchImportHandler();
-      bindClassCreateHandler();
-      ensureBatchDeleteButton();
-      updateBatchDeleteButtonState();
+        bindStudentCheckboxHandler();
+        bindBatchDeleteHandler();
+        bindBatchImportHandler();
+        bindClassCreateHandler();
+        ensureBatchDeleteButton();
+        updateBatchDeleteButtonState();
         return;
       }
 
@@ -2153,7 +2199,7 @@
         }
       }
       await loadStudentsByClass(target);
-    } catch (_) {}
+    } catch (_) { }
   }
 
   var rawSetItem = localStorage.setItem.bind(localStorage);
@@ -2175,12 +2221,212 @@
     postJson('/api/kv/clear', { namespace: NAMESPACE });
   };
 
+  function bindLoginHandler() {
+    if (document.body.getAttribute('data-db-login-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-login-bound', '1');
+
+    document.body.addEventListener('click', async function (event) {
+      if (!detectLoginPage()) {
+        return;
+      }
+      var btn = event.target.closest('button');
+      if (!btn) {
+        return;
+      }
+      var txt = (btn.innerText || '').replace(/\s+/g, '');
+      if (txt.indexOf('开启智慧课堂') < 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      var usernameInput = document.querySelector('input[placeholder="教职工账号"]');
+      var passwordInput = document.querySelector('input[placeholder="登录密码"]');
+
+      var username = usernameInput ? String(usernameInput.value || '').trim() : '';
+      var password = passwordInput ? String(passwordInput.value || '').trim() : '';
+
+      if (!username || !password) {
+        window.alert('请输入账号和密码。');
+        return;
+      }
+
+      try {
+        var res = await fetch(API_BASE + '/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username, password: password })
+        });
+
+        if (!res.ok) {
+          window.alert('登录失败，请检查账号密码。');
+          return;
+        }
+
+        var data = await res.json();
+        localStorage.setItem('token', String(data.token));
+        localStorage.setItem('user', JSON.stringify(data.user));
+
+        // CRITICAL: Force sync to backend KV store before navigation to ensure persistence
+        // regardless of browser localStorage behavior or race conditions.
+        try {
+          await postJson('/api/kv/upsert', { namespace: NAMESPACE, key: 'token', value: String(data.token) });
+          await postJson('/api/kv/upsert', { namespace: NAMESPACE, key: 'user', value: JSON.stringify(data.user) });
+        } catch (e) { }
+
+        if (window.parent) {
+          var targetId = data.user && data.user.role === 'admin' ? 'admin_dashboard' : 'teacher_classroom_main';
+          window.parent.postMessage({
+            type: 'iframeNavigation',
+            targetPageId: targetId
+          }, '*');
+        } else {
+          if (data.user && data.user.role === 'admin') {
+            window.location.href = '管理后台仪表盘.html';
+          } else {
+            window.location.href = '课堂教学主界面.html';
+          }
+        }
+      } catch (_) {
+        window.alert('登录请求失败，请检查网络。');
+      }
+    }, true);
+  }
+
+  function runUserInfoOverride() {
+    var userStr = localStorage.getItem('user');
+    if (!userStr) {
+      return;
+    }
+    try {
+      var user = JSON.parse(userStr);
+      if (!user || !user.name) {
+        return;
+      }
+
+      var labels = Array.prototype.slice.call(document.querySelectorAll('span, div, p, h1, h2, h3'));
+      for (var i = 0; i < labels.length; i += 1) {
+        var node = labels[i];
+        if (node.children.length === 0) {
+          var t = (node.textContent || '').trim();
+          if (t === '教师' || t === '徐汉初' || t === '未登录教师') {
+            node.textContent = user.name;
+          }
+        }
+      }
+    } catch (_) { }
+  }
+
+  function bindLogoutHandler() {
+    if (document.body.getAttribute('data-db-logout-bound') === '1') {
+      return;
+    }
+    document.body.setAttribute('data-db-logout-bound', '1');
+
+    document.body.addEventListener('click', function (event) {
+      var btn = event.target.closest('button');
+      if (!btn) {
+        return;
+      }
+      var txt = (btn.innerText || '').replace(/\s+/g, '');
+      if (txt.indexOf('退出') >= 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        if (window.parent) {
+          window.parent.postMessage({
+            type: 'iframeNavigation',
+            targetPageId: 'login_page'
+          }, '*');
+        } else {
+          window.location.href = '教师登录页.html';
+        }
+      }
+    }, true);
+  }
+
+  function checkAuthSession() {
+    if (detectLoginPage()) {
+      return;
+    }
+
+    async function performCheck() {
+      // 1. Local Check
+      var token = localStorage.getItem('token');
+      if (token) return;
+
+      // 2. Parent Check
+      if (window.parent && window.parent !== window) {
+        try {
+          token = window.parent.localStorage.getItem('token');
+          if (token) {
+            localStorage.setItem('token', token);
+            var userStr = window.parent.localStorage.getItem('user');
+            if (userStr) localStorage.setItem('user', userStr);
+            return;
+          }
+        } catch (_) { }
+      }
+
+      // 3. Server Recovery (Last Resort)
+      try {
+        // Explicitly try to fetch the latest state from server
+        var res = await fetch(API_BASE + '/api/kv/snapshot?namespace=' + encodeURIComponent(NAMESPACE));
+        if (res.ok) {
+          var body = await res.json();
+          var items = body.items || {};
+          if (items.token) {
+            localStorage.setItem('token', items.token);
+            if (items.user) {
+              localStorage.setItem('user', items.user);
+            }
+            // Recovered successfully, no need to redirect
+            return;
+          }
+        }
+      } catch (_) { }
+
+      // 4. Final Check & Redirect
+      // Re-read token after attempts
+      token = localStorage.getItem('token');
+
+      var dashboardPage = detectAdminDashboardPage();
+      var teacherPage = detectTeacherManagementPage();
+      var classPage = detectClassManagementPage();
+
+      if (!token && (dashboardPage || teacherPage || classPage)) {
+        // Only allow the top-level window to perform authentication redirects.
+        // Inner iframes (especially srcdoc) might have restricted access to storage
+        // and shouldn't trigger a full page logout if the shell is already authenticated.
+        if (window === window.top) {
+          console.warn('Redirecting to login due to missing token in Top Window');
+          window.location.href = '教师登录页.html';
+        } else {
+          console.warn('Authentication check failed in iframe, but suppressing redirect.');
+        }
+      }
+    }
+
+    // Increase delay to ensure server sync has settled if coming from a fast redirect
+    setTimeout(performCheck, 600);
+  }
+
   bootstrapFromServer();
+  checkAuthSession();
   mirrorWholeStorage();
   bindTeacherCreateHandler();
   bindTeacherActionHandler();
   bindTeacherDeleteHandler();
   bindDashboardRefreshHandler();
+  bindLoginHandler();
+  bindLogoutHandler();
+  setTimeout(function () { runUserInfoOverride(); }, 500);
+  setTimeout(function () { runUserInfoOverride(); }, 1500);
+  setTimeout(function () { runUserInfoOverride(); }, 3000);
   setTimeout(function () { runTeacherPageOverride(); }, 700);
   setTimeout(function () { runTeacherPageOverride(); }, 1800);
   setTimeout(function () { runDashboardOverride(); }, 700);
