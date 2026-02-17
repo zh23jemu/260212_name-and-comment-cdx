@@ -3,3 +3,4 @@ server/data/*.db
 server/data/*.db-*
 server/data/*.sqlite
 server/data/*.sqlite-*
+最终版/

@@ -2415,6 +2415,216 @@
     setTimeout(performCheck, 600);
   }
 
+  async function loadTeacherClasses() {
+    // Only run on teacher classroom page
+    if ((document.title || '').indexOf('课堂教学主界面') < 0) {
+      return;
+    }
+
+    try {
+      // Get current user
+      var userStr = localStorage.getItem('user');
+      if (!userStr) {
+        console.warn('[loadTeacherClasses] No user found in localStorage');
+        return;
+      }
+
+      var user = JSON.parse(userStr);
+      if (!user.id || user.role !== 'teacher') {
+        console.warn('[loadTeacherClasses] User is not a teacher or has no ID');
+        return;
+      }
+
+      console.log('[loadTeacherClasses] Loading classes for teacher:', user.username, 'ID:', user.id);
+
+      // Fetch teacher's class permissions
+      var res = await fetch(API_BASE + '/api/teachers/' + user.id + '/class-permissions', {
+        headers: getAuthHeader()
+      });
+
+      if (!res.ok) {
+        console.error('[loadTeacherClasses] Failed to fetch class permissions:', res.status);
+        return;
+      }
+
+      var data = await res.json();
+      var classIds = data.classIds || [];
+
+      console.log('[loadTeacherClasses] Teacher has access to class IDs:', classIds);
+
+      if (classIds.length === 0) {
+        console.warn('[loadTeacherClasses] Teacher has no accessible classes');
+        return;
+      }
+
+      // Fetch all classes to get their names
+      var classesRes = await fetch(API_BASE + '/api/classes', {
+        headers: getAuthHeader()
+      });
+
+      if (!classesRes.ok) {
+        console.error('[loadTeacherClasses] Failed to fetch classes:', classesRes.status);
+        return;
+      }
+
+      var allClasses = await classesRes.json();
+      var accessibleClasses = allClasses.filter(function (cls) {
+        return classIds.indexOf(cls.id) >= 0;
+      });
+
+      console.log('[loadTeacherClasses] Accessible classes:', accessibleClasses.map(function (c) { return c.name; }).join(', '));
+
+      if (accessibleClasses.length === 0) {
+        console.warn('[loadTeacherClasses] No matching classes found');
+        return;
+      }
+
+      // Store the accessible classes in a global variable for later use
+      window.__teacherAccessibleClasses__ = accessibleClasses;
+
+      // Try multiple selectors to find the class dropdown
+      var selectButton = document.querySelector('button[role="combobox"][data-placeholder]') ||
+        document.querySelector('button[role="combobox"]') ||
+        document.querySelector('button[data-state="closed"]');
+
+      if (!selectButton) {
+        console.warn('[loadTeacherClasses] Class selector button not found, trying iframe...');
+
+        // Try to find it in the iframe
+        var iframe = document.getElementById('dynamicIframe');
+        if (iframe && iframe.contentDocument) {
+          selectButton = iframe.contentDocument.querySelector('button[role="combobox"][data-placeholder]') ||
+            iframe.contentDocument.querySelector('button[role="combobox"]') ||
+            iframe.contentDocument.querySelector('button[data-state="closed"]');
+        }
+      }
+
+      if (!selectButton) {
+        console.error('[loadTeacherClasses] Could not find class selector button in main document or iframe');
+        return;
+      }
+
+      console.log('[loadTeacherClasses] Found select button:', selectButton);
+
+      // Remove disabled attribute
+      selectButton.removeAttribute('disabled');
+      selectButton.removeAttribute('data-disabled');
+      selectButton.setAttribute('aria-disabled', 'false');
+
+      // Update the placeholder text with the first class
+      var firstClass = accessibleClasses[0];
+      var valueSpan = selectButton.querySelector('span[data-placeholder]') ||
+        selectButton.querySelector('span[style*="pointer-events"]');
+
+      function updateStatusPanel(className) {
+        var doc = selectButton.ownerDocument || document;
+        var bookIcon = doc.querySelector('.lucide-book-open');
+        if (bookIcon) {
+          var panel = bookIcon.closest('div.rounded-xl');
+          if (panel) {
+            var span = panel.querySelector('span.font-bold');
+            if (span) {
+              span.textContent = className;
+              panel.classList.remove('text-slate-500', 'bg-slate-50', 'border-dashed', 'border-slate-200');
+              panel.classList.add('text-indigo-600', 'bg-indigo-50', 'border-indigo-100');
+            }
+          }
+        }
+      }
+
+      if (valueSpan) {
+        valueSpan.textContent = firstClass.name;
+        valueSpan.removeAttribute('data-placeholder');
+        updateStatusPanel(firstClass.name);
+        console.log('[loadTeacherClasses] Updated dropdown text to:', firstClass.name);
+      } else {
+        console.warn('[loadTeacherClasses] Could not find value span to update');
+      }
+
+      // Create dropdown content if it doesn't exist
+      var dropdownId = selectButton.getAttribute('aria-controls');
+      var existingDropdown = (selectButton.ownerDocument || document).getElementById(dropdownId);
+
+      if (!existingDropdown && dropdownId) {
+        console.log('[loadTeacherClasses] Creating dropdown menu with ID:', dropdownId);
+
+        // Create the dropdown container
+        var dropdown = document.createElement('div');
+        dropdown.id = dropdownId;
+        dropdown.setAttribute('role', 'listbox');
+        dropdown.setAttribute('data-state', 'closed');
+        dropdown.style.cssText = 'position: absolute; z-index: 50; min-width: 160px; overflow: hidden; border-radius: 0.375rem; border: 1px solid #e2e8f0; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); display: none;';
+
+        // Create options for each class
+        accessibleClasses.forEach(function (cls, index) {
+          var option = document.createElement('div');
+          option.setAttribute('role', 'option');
+          option.setAttribute('data-value', cls.id);
+          option.className = 'relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-indigo-50 hover:text-indigo-600';
+          option.textContent = cls.name;
+
+          // Add click handler
+          option.addEventListener('click', function () {
+            if (valueSpan) {
+              valueSpan.textContent = cls.name;
+            }
+            updateStatusPanel(cls.name);
+            dropdown.style.display = 'none';
+            selectButton.setAttribute('data-state', 'closed');
+            selectButton.setAttribute('aria-expanded', 'false');
+
+            // Store selected class
+            window.__selectedClass__ = cls;
+            console.log('[loadTeacherClasses] Selected class:', cls.name);
+          });
+
+          dropdown.appendChild(option);
+        });
+
+        // Insert dropdown after the button
+        selectButton.parentNode.insertBefore(dropdown, selectButton.nextSibling);
+
+        // Add click handler to button to toggle dropdown
+        selectButton.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          var isOpen = dropdown.style.display === 'block';
+          if (isOpen) {
+            dropdown.style.display = 'none';
+            selectButton.setAttribute('data-state', 'closed');
+            selectButton.setAttribute('aria-expanded', 'false');
+          } else {
+            // Position dropdown below button
+            var rect = selectButton.getBoundingClientRect();
+            dropdown.style.position = 'absolute';
+            dropdown.style.top = (rect.bottom + 4) + 'px';
+            dropdown.style.left = rect.left + 'px';
+            dropdown.style.width = rect.width + 'px';
+            dropdown.style.display = 'block';
+            selectButton.setAttribute('data-state', 'open');
+            selectButton.setAttribute('aria-expanded', 'true');
+          }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function (e) {
+          if (!selectButton.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.style.display = 'none';
+            selectButton.setAttribute('data-state', 'closed');
+            selectButton.setAttribute('aria-expanded', 'false');
+          }
+        });
+
+        console.log('[loadTeacherClasses] Dropdown menu created with', accessibleClasses.length, 'options');
+      }
+
+      console.log('[loadTeacherClasses] Successfully loaded ' + accessibleClasses.length + ' classes');
+    } catch (error) {
+      console.error('[loadTeacherClasses] Error:', error);
+    }
+  }
+
   bootstrapFromServer();
   checkAuthSession();
   mirrorWholeStorage();
@@ -2434,6 +2644,9 @@
   setTimeout(function () { runClassPageOverride(); }, 900);
   setTimeout(function () { runClassPageOverride(); }, 2200);
   setTimeout(function () { runClassPageOverride(); }, 3800);
+  setTimeout(function () { loadTeacherClasses(); }, 1000);
+  setTimeout(function () { loadTeacherClasses(); }, 2000);
+  setTimeout(function () { loadTeacherClasses(); }, 3500);
 
   window.sqliteBridge = {
     namespace: NAMESPACE,
