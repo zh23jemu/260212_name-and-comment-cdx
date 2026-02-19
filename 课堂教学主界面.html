@@ -446,6 +446,302 @@
       }
     })();
   </script>
+  <script>
+    // Teacher Statistics Tracker
+    (function() {
+      const API_BASE = window.location.origin;
+      let sessionStartTime = Date.now();
+      let timerInterval = null;
+      let statsUpdateInterval = null;
+      let currentStats = {
+        login_count: 0,
+        cumulative_duration: 0,
+        evaluation_count: 0,
+        stars_given: 0
+      };
+
+      // Format seconds to HH:MM:SS
+      function formatDuration(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+
+      // Get iframe document
+      function getIframeDoc() {
+        const iframe = document.getElementById('dynamicIframe');
+        return iframe && iframe.contentDocument ? iframe.contentDocument : null;
+      }
+
+      // Get auth token from localStorage
+      function getAuthToken() {
+        return localStorage.getItem('authToken') || '';
+      }
+
+      // Fetch user statistics from backend
+      async function fetchUserStats() {
+        try {
+          const token = getAuthToken();
+          if (!token) {
+            console.log('No auth token, using default stats');
+            return currentStats;
+          }
+
+          // Fetch teacher statistics from database
+          const teacherStatsResponse = await fetch(`${API_BASE}/api/statistics/teacher`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          let teacherStats = {
+            evaluation_count: 0,
+            stars_given: 0
+          };
+
+          if (teacherStatsResponse.ok) {
+            teacherStats = await teacherStatsResponse.json();
+          }
+
+          // Fetch session statistics from kv store
+          const kvResponse = await fetch(`${API_BASE}/api/kv/snapshot?namespace=teacher_stats_${token.slice(0, 8)}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          let kvStats = {
+            login_count: 0,
+            cumulative_duration: 0
+          };
+
+          if (kvResponse.ok) {
+            const data = await kvResponse.json();
+            kvStats = {
+              login_count: parseInt(data.items.login_count || '0', 10),
+              cumulative_duration: parseInt(data.items.cumulative_duration || '0', 10)
+            };
+          }
+
+          return {
+            login_count: kvStats.login_count,
+            cumulative_duration: kvStats.cumulative_duration,
+            evaluation_count: teacherStats.evaluation_count,
+            stars_given: teacherStats.stars_given
+          };
+        } catch (error) {
+          console.error('Error fetching stats:', error);
+          return currentStats;
+        }
+      }
+
+      // Update all statistics in the iframe DOM
+      function updateAllStats() {
+        const doc = getIframeDoc();
+        if (!doc) return false;
+
+        let updated = false;
+        const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const totalDuration = currentStats.cumulative_duration + elapsed;
+
+        // Find all spans in the iframe
+        const allSpans = doc.querySelectorAll('span');
+        
+        for (let i = 0; i < allSpans.length; i++) {
+          const span = allSpans[i];
+          const text = span.textContent.trim();
+          
+          // Update 登录时长 (current session time)
+          if (text.includes('登录时长')) {
+            const newText = `登录时长 ${formatDuration(elapsed)}`;
+            if (span.textContent !== newText) {
+              span.textContent = newText;
+              updated = true;
+            }
+          }
+          
+          // Check if this span contains a label, then update the next span with the value
+          if (text === '累计时长') {
+            // Find the next span that matches time format
+            for (let j = i + 1; j < Math.min(i + 3, allSpans.length); j++) {
+              if (allSpans[j].textContent.match(/^\d{2}:\d{2}:\d{2}$/)) {
+                const newText = formatDuration(totalDuration);
+                if (allSpans[j].textContent !== newText) {
+                  allSpans[j].textContent = newText;
+                  updated = true;
+                }
+                break;
+              }
+            }
+          }
+          
+          if (text === '累计登录') {
+            // Find the next span that contains just a number (not followed by text)
+            for (let j = i + 1; j < Math.min(i + 5, allSpans.length); j++) {
+              const valueText = allSpans[j].textContent.trim();
+              const nextSpan = allSpans[j + 1];
+              // Check if this is a number and the next span is "次"
+              if (valueText.match(/^\d+$/) && nextSpan && nextSpan.textContent.trim() === '次') {
+                const newText = String(currentStats.login_count);
+                if (allSpans[j].textContent !== newText) {
+                  allSpans[j].textContent = newText;
+                  updated = true;
+                }
+                break;
+              }
+            }
+          }
+          
+          if (text === '累计评价') {
+            // Find the next span that contains just a number (followed by "次")
+            for (let j = i + 1; j < Math.min(i + 5, allSpans.length); j++) {
+              const valueText = allSpans[j].textContent.trim();
+              const nextSpan = allSpans[j + 1];
+              // Check if this is a number and the next span is "次"
+              if (valueText.match(/^\d+$/) && nextSpan && nextSpan.textContent.trim() === '次') {
+                const newText = String(currentStats.evaluation_count);
+                if (allSpans[j].textContent !== newText) {
+                  allSpans[j].textContent = newText;
+                  updated = true;
+                }
+                break;
+              }
+            }
+          }
+          
+          if (text === '累计发出星数') {
+            // Find the next span that contains just a number (no "次" after it)
+            for (let j = i + 1; j < Math.min(i + 5, allSpans.length); j++) {
+              const valueText = allSpans[j].textContent.trim();
+              // This should be just a number, no unit after it
+              if (valueText.match(/^\d+$/)) {
+                const newText = String(currentStats.stars_given);
+                if (allSpans[j].textContent !== newText) {
+                  allSpans[j].textContent = newText;
+                  updated = true;
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        return updated;
+      }
+
+      // Save statistics to backend (only session stats, not evaluation stats)
+      async function saveUserStats(stats) {
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+
+          const namespace = `teacher_stats_${token.slice(0, 8)}`;
+          
+          // Only save login_count and cumulative_duration to kv store
+          // evaluation_count and stars_given come from database
+          const sessionStats = {
+            login_count: stats.login_count,
+            cumulative_duration: stats.cumulative_duration
+          };
+          
+          for (const [key, value] of Object.entries(sessionStats)) {
+            await fetch(`${API_BASE}/api/kv/upsert`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                namespace,
+                key,
+                value: String(value)
+              })
+            });
+          }
+        } catch (error) {
+          console.error('Error saving stats:', error);
+        }
+      }
+
+      // Track login
+      async function trackLogin() {
+        const stats = await fetchUserStats();
+        currentStats = {
+          login_count: stats.login_count + 1,
+          cumulative_duration: stats.cumulative_duration,
+          evaluation_count: stats.evaluation_count,
+          stars_given: stats.stars_given,
+          last_login: new Date().toISOString()
+        };
+
+        await saveUserStats(currentStats);
+        console.log('Login tracked. Current stats:', currentStats);
+        return currentStats;
+      }
+
+      // Track logout
+      async function trackLogout() {
+        const sessionDuration = Math.floor((Date.now() - sessionStartTime) / 1000);
+        currentStats.cumulative_duration += sessionDuration;
+        await saveUserStats(currentStats);
+      }
+
+      // Initialize
+      async function init() {
+        console.log('Initializing stats tracker...');
+        
+        // Track login
+        await trackLogin();
+        console.log('Current stats:', currentStats);
+
+        // Try to update stats immediately
+        const iframe = document.getElementById('dynamicIframe');
+        if (iframe) {
+          // Wait for iframe to load
+          iframe.addEventListener('load', () => {
+            console.log('Iframe loaded, updating stats...');
+            setTimeout(() => {
+              const updated = updateAllStats();
+              console.log('Stats updated:', updated);
+            }, 100);
+          });
+
+          // Also try updating now if already loaded
+          if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+            setTimeout(() => {
+              const updated = updateAllStats();
+              console.log('Stats updated (immediate):', updated);
+            }, 100);
+          }
+        }
+
+        // Update stats every second
+        statsUpdateInterval = setInterval(() => {
+          updateAllStats();
+        }, 1000);
+
+        // Refresh evaluation stats every 5 seconds from database
+        setInterval(async () => {
+          const stats = await fetchUserStats();
+          currentStats.evaluation_count = stats.evaluation_count;
+          currentStats.stars_given = stats.stars_given;
+        }, 5000);
+
+        // Save on unload
+        window.addEventListener('beforeunload', () => {
+          trackLogout();
+        });
+      }
+
+      // Start
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+    })();
+  </script>
 </body>
 
 </html>

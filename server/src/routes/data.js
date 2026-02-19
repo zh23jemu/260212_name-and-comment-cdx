@@ -494,4 +494,23 @@ export default async function dataRoutes(fastify) {
       topStudents
     };
   });
+
+  fastify.get('/api/statistics/teacher', { preHandler: requireAuth }, async (request) => {
+    const teacherId = request.user.id;
+
+    // Get teacher's evaluation count
+    const evalCount = db.prepare(
+      'SELECT COUNT(1) as count FROM evaluations WHERE teacher_id = ?'
+    ).get(teacherId).count;
+
+    // Get teacher's total stars given
+    const starsGiven = db.prepare(
+      'SELECT IFNULL(SUM(score), 0) as total FROM evaluations WHERE teacher_id = ?'
+    ).get(teacherId).total;
+
+    return {
+      evaluation_count: evalCount,
+      stars_given: starsGiven
+    };
+  });
 }
