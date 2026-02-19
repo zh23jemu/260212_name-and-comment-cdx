@@ -2415,6 +2415,75 @@
     setTimeout(performCheck, 600);
   }
 
+  // 找到「班级出勤」显示元素，更新为 学生数 / 学生数 人
+  function updateAttendanceDisplay(studentCount) {
+    // 在所有可能的 document 里查找
+    var docs = [document];
+    try {
+      var ifrEl = document.getElementById('dynamicIframe');
+      if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+    } catch (_) { }
+    try {
+      if (window.parent && window.parent !== window) {
+        var pIfr = window.parent.document.getElementById('dynamicIframe');
+        if (pIfr && pIfr.contentDocument) docs.push(pIfr.contentDocument);
+        if (window.parent.document !== document) docs.push(window.parent.document);
+      }
+    } catch (_) { }
+
+    for (var di = 0; di < docs.length; di++) {
+      var d = docs[di];
+      if (!d) continue;
+      // 匹配包含「/ X 人」或「0 / 0」格式的 span
+      var allSpans = d.querySelectorAll('span.font-bold, span[class*="font-bold"]');
+      for (var si = 0; si < allSpans.length; si++) {
+        var sp = allSpans[si];
+        // 直接子节点中有 人 span 的元素才是目标
+        var personSpan = sp.querySelector('span');
+        if (!personSpan) continue;
+        if ((personSpan.textContent || '').trim() !== '人') continue;
+        // 并且外层文本包含 / 分隔符
+        var rawTxt = sp.childNodes[0] ? (sp.childNodes[0].textContent || '') : '';
+        if (rawTxt.indexOf('/') < 0 && (sp.textContent || '').indexOf('/') < 0) continue;
+
+        // 找到了，更新文本节点
+        // 保留内部 <span>人</span>，只更新前面的文本节点
+        var textNode = null;
+        for (var ni = 0; ni < sp.childNodes.length; ni++) {
+          if (sp.childNodes[ni].nodeType === 3) { // Text node
+            textNode = sp.childNodes[ni];
+            break;
+          }
+        }
+        var newText = studentCount + ' / ' + studentCount + ' ';
+        if (textNode) {
+          textNode.textContent = newText;
+        } else {
+          sp.insertBefore(document.createTextNode(newText), sp.firstChild);
+        }
+        console.log('[attendance] Updated attendance display to:', studentCount, '/', studentCount);
+        return; // 找到了就退出
+      }
+    }
+    console.warn('[attendance] Could not find attendance display element');
+  }
+
+  // 获取指定班级学生数并更新出勤显示
+  async function fetchAndUpdateAttendance(cls) {
+    if (!cls || !cls.id) return;
+    try {
+      var res = await fetch(API_BASE + '/api/classes/' + cls.id + '/students', {
+        headers: getAuthHeader()
+      });
+      if (!res.ok) return;
+      var students = await res.json();
+      var activeCount = (students || []).length;
+      updateAttendanceDisplay(activeCount);
+    } catch (e) {
+      console.warn('[attendance] Error fetching students:', e);
+    }
+  }
+
   async function loadTeacherClasses() {
     // Only run on teacher classroom page
     if ((document.title || '').indexOf('课堂教学主界面') < 0) {
@@ -2589,6 +2658,8 @@
               }
             } catch (_) { }
             console.log('[loadTeacherClasses] Selected class:', cls.name, '(synced to all windows)');
+            // 切换班级时同步更新出勤人数
+            fetchAndUpdateAttendance(cls);
           });
 
           dropdown.appendChild(option);
@@ -2632,6 +2703,8 @@
         console.log('[loadTeacherClasses] Dropdown menu created with', accessibleClasses.length, 'options');
       }
 
+      // 初始加载时更新默认班级（第一个班级）的出勤人数
+      fetchAndUpdateAttendance(firstClass);
       console.log('[loadTeacherClasses] Successfully loaded ' + accessibleClasses.length + ' classes');
     } catch (error) {
       console.error('[loadTeacherClasses] Error:', error);
