@@ -2643,7 +2643,8 @@
     isRolling: false,
     rollTimer: null,
     students: [],
-    usedInSession: []
+    usedInSession: [],
+    sessionCount: 0
   };
 
   function detectTeacherClassroomPage() {
@@ -2680,19 +2681,26 @@
     return null;
   }
 
-  // 找到副标题（显示 "等待抽取" / "滚动中..." / 学生姓名提示）
+  // 找到副标题元素（优先用 data-roll-subtitle 锚点，否则多重回退匹配）
   function findRandomSubtitleEl(doc) {
     if (!doc) return null;
+    // 已被标记的元素（最可靠）
+    var marked = doc.querySelector('[data-roll-subtitle]');
+    if (marked) return marked;
+    // 通过初始或已知文字精确匹配
     var all = doc.querySelectorAll('div');
     for (var i = 0; i < all.length; i++) {
       var el = all[i];
       var txt = (el.textContent || '').trim();
-      if ((txt === '等待抽取' || txt === '滚动中...' || txt === '点击任意处停止') &&
-        el.children.length === 0) {
+      if (el.children.length === 0 && (
+        txt === '\u7b49\u5f85\u62bd\u53d6' || txt === '\u6b63\u5728\u62bd\u53d6...' ||
+        txt === '\u70b9\u51fb\u4efb\u610f\u5904\u505c\u6b62' ||
+        txt === '\u2728 \u88ab\u70b9\u5230\u4e86\uff01'
+      )) {
         return el;
       }
     }
-    // 宽松匹配：tracking-[0.5em] / text-slate-400
+    // 宽松匹配：tracking + font-bold 无子元素
     for (var j = 0; j < all.length; j++) {
       var e2 = all[j];
       if ((e2.className || '').indexOf('tracking-') >= 0 &&
@@ -2704,7 +2712,46 @@
     return null;
   }
 
-  // 更新显示文字
+  // 找到顶部"当堂点名总计"统计卡片内的数字元素
+  function findCallCountEl(doc) {
+    if (!doc) return null;
+    // 优先用锚点（已找到并标记过的）
+    var cached = doc.querySelector('[data-call-count]');
+    if (cached) return cached;
+
+    // 方法1：通过卡片背景色 class 直接定位（最可靠）
+    // "当堂点名总计"是第一张蓝色卡片，class 包含 bg-vibrant-blue
+    var blueCard = doc.querySelector('.bg-vibrant-blue');
+    if (blueCard) {
+      var numEl = blueCard.querySelector('[class*="text-3xl"]');
+      if (numEl) {
+        numEl.setAttribute('data-call-count', '1');
+        console.log('[randomCall] Found via bg-vibrant-blue:', numEl.textContent);
+        return numEl;
+      }
+    }
+
+    // 方法2：通过 data-source-file 属性找 StatsCard 内的 text-3xl（第一个）
+    var allTextEl = doc.querySelectorAll('[class*="text-3xl"][class*="font-bold"][class*="tracking-tight"]');
+    for (var j = 0; j < allTextEl.length; j++) {
+      var el = allTextEl[j];
+      // 找到其祖先 Card，检查 Card 内是否有"当堂点名总计"文字
+      var parentCard = el.parentElement;
+      for (var k = 0; k < 5 && parentCard; k++) {
+        if ((parentCard.textContent || '').indexOf('\u5f53\u5821\u70b9\u540d\u603b\u8ba1') >= 0) {
+          el.setAttribute('data-call-count', '1');
+          console.log('[randomCall] Found via text-3xl scan:', el.textContent);
+          return el;
+        }
+        parentCard = parentCard.parentElement;
+      }
+    }
+
+    console.warn('[randomCall] Could not find call count element in:', doc.title);
+    return null;
+  }
+
+  // 更新显示文字，并为副标题打上锚点标记（方便后续查找）
   function setRandomDisplay(doc, nameText, subtitleText) {
     var nameEl = findRandomDisplayEl(doc);
     if (nameEl) {
@@ -2712,7 +2759,58 @@
     }
     var subEl = findRandomSubtitleEl(doc);
     if (subEl) {
+      subEl.setAttribute('data-roll-subtitle', '1');
       subEl.textContent = subtitleText;
+    }
+  }
+
+  // 更新顶部"当堂点名总计"统计卡片数字
+  // 在所有可能的 document 中查找并更新，覆盖 shell/iframe 两种上下文
+  function updateCallCountCard(doc) {
+    var count = String(randomCallState.sessionCount);
+    var updated = false;
+
+    // 候选 document 列表：传入的 doc + 各种跨 window 查找
+    var docs = [doc];
+    try {
+      if (document !== doc) docs.push(document);
+    } catch (_) { }
+    try {
+      var iframeEl = document.getElementById('dynamicIframe');
+      if (iframeEl && iframeEl.contentDocument) docs.push(iframeEl.contentDocument);
+    } catch (_) { }
+    try {
+      if (window.parent && window.parent !== window) {
+        var shellIframe = window.parent.document.getElementById('dynamicIframe');
+        if (shellIframe && shellIframe.contentDocument) docs.push(shellIframe.contentDocument);
+      }
+    } catch (_) { }
+
+    for (var i = 0; i < docs.length; i++) {
+      var d = docs[i];
+      if (!d) continue;
+      var numEl = findCallCountEl(d);
+      if (numEl) {
+        numEl.textContent = count;
+        console.log('[randomCall] Updated call count to', count, 'in doc:', d.title);
+        updated = true;
+        break;
+      }
+    }
+
+    if (!updated) {
+      console.warn('[randomCall] updateCallCountCard: element not found in any document');
+    }
+  }
+
+  // 为副标题打上锚点标记（保持显示"等待抽取"）
+  function initSubtitleDisplay() {
+    var doc = getClassroomDoc();
+    if (!doc) return;
+    var subEl = findRandomSubtitleEl(doc);
+    if (subEl && !subEl.getAttribute('data-roll-subtitle')) {
+      subEl.setAttribute('data-roll-subtitle', '1');
+      // 副标题保持原有"等待抽取"文字不变
     }
   }
 
@@ -2813,17 +2911,18 @@
 
     var picked = available[Math.floor(Math.random() * available.length)];
     randomCallState.usedInSession.push(picked.id);
+    randomCallState.sessionCount += 1;
 
-    setRandomDisplay(doc, picked.name, '✨ 被点到了！');
+    setRandomDisplay(doc, picked.name, '\u2728 \u88ab\u70b9\u5230\u4e86\uff01');
+    updateCallCountCard(doc);
 
-    // 3秒后恢复副标题
+    // 4秒后副标题恢复为"等待抽取"
     setTimeout(function () {
       var d = getClassroomDoc();
-      if (d) {
-        var subEl = findRandomSubtitleEl(d);
-        if (subEl && subEl.textContent === '✨ 被点到了！') {
-          subEl.textContent = '等待抽取';
-        }
+      if (!d) return;
+      var subEl = findRandomSubtitleEl(d);
+      if (subEl && subEl.textContent === '\u2728 \u88ab\u70b9\u5230\u4e86\uff01') {
+        subEl.textContent = '\u7b49\u5f85\u62bd\u53d6';
       }
     }, 4000);
 
@@ -2834,7 +2933,7 @@
       randomCallState._stopHandler = null;
     }
 
-    console.log('[randomCall] Picked:', picked.name);
+    console.log('[randomCall] Picked:', picked.name, '| Total today:', randomCallState.sessionCount);
   }
 
   // 开始随机滚动动画
@@ -2854,7 +2953,7 @@
     randomCallState.students = students;
     randomCallState.isRolling = true;
 
-    setRandomDisplay(doc, students[0].name, '点击任意处停止');
+    setRandomDisplay(doc, students[0].name, '\u6b63\u5728\u62bd\u53d6...');
 
     var idx = 0;
     var speed = 80; // ms
@@ -2912,12 +3011,15 @@
         var btn = event.target.closest('button');
         if (!btn) return;
         var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
-        if (txt.indexOf('开始随机抽取') >= 0 || txt.indexOf('开始随机') >= 0) {
+        if (txt.indexOf('\u5f00\u59cb\u968f\u673a\u62bd\u53d6') >= 0 || txt.indexOf('\u5f00\u59cb\u968f\u673a') >= 0) {
           event.preventDefault();
           event.stopPropagation();
           startRandomRoll(doc);
         }
       }, true);
+
+      // 页面已就绪，初始化副标题为"当堂点名总计 0 次"
+      initSubtitleDisplay();
     }, 1200);
   }
   // ─── 随机点名模块 END ─────────────────────────────────────────────
@@ -2947,6 +3049,9 @@
   setTimeout(function () { loadTeacherClasses(); }, 3500);
   setTimeout(function () { bindRandomCallHandler(); }, 1500);
   setTimeout(function () { bindRandomCallHandler(); }, 3000);
+  setTimeout(function () { initSubtitleDisplay(); }, 1500);
+  setTimeout(function () { initSubtitleDisplay(); }, 2500);
+  setTimeout(function () { initSubtitleDisplay(); }, 4000);
 
   window.sqliteBridge = {
     namespace: NAMESPACE,
