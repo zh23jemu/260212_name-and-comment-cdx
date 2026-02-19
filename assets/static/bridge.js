@@ -2957,6 +2957,185 @@
     }
   }
 
+  // ─── 评价弹窗模块 ───────────────────────────────────────────────
+
+  async function submitEvaluation(classId, studentId, score, tags, comment) {
+    try {
+      var res = await fetch(API_BASE + '/api/evaluations', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, getAuthHeader()),
+        body: JSON.stringify({ classId: classId, studentId: studentId, score: score, tags: tags, comment: comment || '' })
+      });
+      if (!res.ok) {
+        var errData = await res.json().catch(function () { return {}; });
+        console.error('[eval] Submit failed:', res.status, errData);
+        return false;
+      }
+      console.log('[eval] Evaluation submitted: score=' + score + ' tags=' + tags.join(','));
+      return true;
+    } catch (e) {
+      console.error('[eval] Network error:', e);
+      return false;
+    }
+  }
+
+  function showEvaluationModal(doc, student, cls) {
+    if (!doc || !doc.body) return;
+    // 移除已有弹窗
+    var existing = doc.getElementById('bridge-eval-modal');
+    if (existing) existing.remove();
+
+    var TAGS_POS = ['积极发言', '回答正确', '思路清晰', '认真听讲', '学习努力'];
+    var TAGS_NEG = ['需要加油', '注意力分散', '参与不够', '常类展示', '尚需练习'];
+
+    var overlay = doc.createElement('div');
+    overlay.id = 'bridge-eval-modal';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:99999;',
+      'display:flex;align-items:center;justify-content:center;',
+      'background:rgba(15,23,42,0.55);backdrop-filter:blur(6px);',
+      'animation:bridgeFadeIn .25s ease;'
+    ].join('');
+
+    // 注入动画 keyframes
+    if (!doc.getElementById('bridge-eval-styles')) {
+      var styleEl = doc.createElement('style');
+      styleEl.id = 'bridge-eval-styles';
+      styleEl.textContent = [
+        '@keyframes bridgeFadeIn{from{opacity:0}to{opacity:1}}',
+        '@keyframes bridgeSlideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}',
+        '#bridge-eval-modal .bcard{background:#fff;border-radius:1.5rem;padding:2rem 2.2rem;width:420px;max-width:94vw;',
+        'box-shadow:0 20px 60px rgba(79,70,229,.18);animation:bridgeSlideUp .3s ease;}',
+        '#bridge-eval-modal h2{margin:0 0 .3rem;font-size:1.3rem;font-weight:800;color:#1e1b4b;text-align:center;}',
+        '#bridge-eval-modal .bsub{text-align:center;color:#6366f1;font-weight:600;font-size:.9rem;margin-bottom:1.2rem;}',
+        '#bridge-eval-modal .bstars{display:flex;justify-content:center;gap:.6rem;margin:.2rem 0 1.2rem;}',
+        '#bridge-eval-modal .bstar{font-size:2.4rem;cursor:pointer;transition:transform .18s,color .18s,text-shadow .18s;color:#d1d5db;user-select:none;line-height:1;}',
+        '#bridge-eval-modal .bstar:hover{color:#fbbf24;transform:scale(1.2);text-shadow:0 0 12px rgba(251,191,36,.6);}',
+        '#bridge-eval-modal .bstar.on{color:#f59e0b;transform:scale(1.12);text-shadow:0 0 16px rgba(245,158,11,.55);}',
+        '#bridge-eval-modal .bscore{text-align:center;font-size:.85rem;color:#6366f1;font-weight:700;margin-bottom:.9rem;min-height:1.1em;}',
+        '#bridge-eval-modal .btags{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem;}',
+        '#bridge-eval-modal .btag{padding:.3rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;border:1.5px solid;transition:all .15s;}',
+        '#bridge-eval-modal .btag-pos{border-color:#6366f1;color:#6366f1;background:#eef2ff;}',
+        '#bridge-eval-modal .btag-pos.sel{background:#6366f1;color:#fff;}',
+        '#bridge-eval-modal .btag-neg{border-color:#f43f5e;color:#f43f5e;background:#fff1f2;}',
+        '#bridge-eval-modal .btag-neg.sel{background:#f43f5e;color:#fff;}',
+        '#bridge-eval-modal .bcomment{width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:.75rem;',
+        'padding:.55rem .8rem;font-size:.85rem;color:#334155;outline:none;resize:none;margin-bottom:1.1rem;font-family:inherit;}',
+        '#bridge-eval-modal .bcomment:focus{border-color:#6366f1;}',
+        '#bridge-eval-modal .bbtns{display:flex;gap:.75rem;}',
+        '#bridge-eval-modal .bbtn{flex:1;padding:.75rem;border-radius:.85rem;font-size:.95rem;font-weight:700;cursor:pointer;border:none;transition:all .15s;}',
+        '#bridge-eval-modal .bbtn-submit{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.35);}',
+        '#bridge-eval-modal .bbtn-submit:hover{filter:brightness(1.08);}',
+        '#bridge-eval-modal .bbtn-skip{background:#f1f5f9;color:#64748b;}',
+        '#bridge-eval-modal .bbtn-skip:hover{background:#e2e8f0;}',
+        '#bridge-eval-modal .blabel{font-size:.78rem;font-weight:700;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.35rem;}'
+      ].join('');
+      doc.head.appendChild(styleEl);
+    }
+
+    var scoreLabels = ['', '需要加油 ★', '表现一般 ★★', '表现良好 ★★★', '非常优秀 ★★★★', '满分表现 ★★★★★'];
+    var selectedScore = 0;
+    var selectedTags = [];
+
+    overlay.innerHTML = '<div class="bcard">'
+      + '<h2>\u4e3a ' + student.name + ' \u6253\u5206</h2>'
+      + '<div class="bsub">\u8bf7\u9009\u62e9\u8bc4\u5206\u5e76\u6dfb\u52a0\u8bc4\u8bed\u6807\u7b7e</div>'
+      + '<div class="bstars" id="beval-stars">'
+      + '\u2605\u2605\u2605\u2605\u2605'.split('').map(function (s, i) {
+        return '<span class="bstar" data-v="' + (i + 1) + '">' + s + '</span>';
+      }).join('')
+      + '</div>'
+      + '<div class="bscore" id="beval-score">\u8bf7\u70b9\u51fb\u661f\u661f\u8bc4\u5206</div>'
+      + '<div class="blabel">\u8bc4\u8bed\u6807\u7b7e</div>'
+      + '<div class="btags" id="beval-tags">'
+      + TAGS_POS.map(function (t) { return '<span class="btag btag-pos" data-tag="' + t + '">' + t + '</span>'; }).join('')
+      + TAGS_NEG.map(function (t) { return '<span class="btag btag-neg" data-tag="' + t + '">' + t + '</span>'; }).join('')
+      + '</div>'
+      + '<div class="blabel">\u5907\u6ce8\uff08\u53ef\u9009\uff09</div>'
+      + '<textarea class="bcomment" id="beval-comment" rows="2" placeholder="\u6dfb\u52a0\u5907\u6ce8..."></textarea>'
+      + '<div class="bbtns">'
+      + '<button class="bbtn bbtn-skip" id="beval-skip">\u6682\u4e0d\u8bc4\u4ef7</button>'
+      + '<button class="bbtn bbtn-submit" id="beval-submit">\u786e\u8ba4\u8bc4\u4ef7</button>'
+      + '</div>'
+      + '</div>';
+
+    doc.body.appendChild(overlay);
+
+    // \u661f\u661f\u4e92\u52a8
+    var stars = overlay.querySelectorAll('.bstar');
+    var scoreEl = doc.getElementById('beval-score');
+    function highlightStars(n) {
+      stars.forEach(function (s) {
+        var v = parseInt(s.getAttribute('data-v'), 10);
+        if (v <= n) s.classList.add('on'); else s.classList.remove('on');
+      });
+    }
+    stars.forEach(function (s) {
+      s.addEventListener('mouseover', function () { highlightStars(parseInt(s.getAttribute('data-v'), 10)); });
+      s.addEventListener('mouseleave', function () { highlightStars(selectedScore); });
+      s.addEventListener('click', function (e) {
+        e.stopPropagation();
+        selectedScore = parseInt(s.getAttribute('data-v'), 10);
+        highlightStars(selectedScore);
+        if (scoreEl) scoreEl.textContent = scoreLabels[selectedScore] || '';
+      });
+    });
+
+    // \u6807\u7b7e\u4e92\u52a8
+    var tagEls = overlay.querySelectorAll('.btag');
+    tagEls.forEach(function (t) {
+      t.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var tag = t.getAttribute('data-tag');
+        var idx = selectedTags.indexOf(tag);
+        if (idx >= 0) { selectedTags.splice(idx, 1); t.classList.remove('sel'); }
+        else { selectedTags.push(tag); t.classList.add('sel'); }
+      });
+    });
+
+    function closeModal() {
+      overlay.style.animation = 'bridgeFadeIn .2s ease reverse';
+      setTimeout(function () { if (overlay.parentNode) overlay.remove(); }, 200);
+    }
+
+    // \u70b9\u51fb\u906e\u7f69\u5c42\u5173\u95ed
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    // \u6682\u4e0d\u8bc4\u4ef7
+    var skipBtn = doc.getElementById('beval-skip');
+    if (skipBtn) skipBtn.addEventListener('click', function (e) { e.stopPropagation(); closeModal(); });
+
+    // \u786e\u8ba4\u8bc4\u4ef7
+    var submitBtn = doc.getElementById('beval-submit');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (!selectedScore) {
+          if (scoreEl) { scoreEl.textContent = '\u8bf7\u5148\u70b9\u51fb\u661f\u661f\u8bc4\u5206 ⚠️'; scoreEl.style.color = '#f43f5e'; }
+          return;
+        }
+        var comment = (doc.getElementById('beval-comment') || {}).value || '';
+        var clsId = (cls && cls.id) ? cls.id : (window.__selectedClass__ || {}).id;
+        if (!clsId) { console.warn('[eval] No classId'); closeModal(); return; }
+        submitBtn.textContent = '\u63d0\u4ea4\u4e2d...';
+        submitBtn.disabled = true;
+        submitEvaluation(clsId, student.id, selectedScore, selectedTags.slice(), comment).then(function (ok) {
+          if (ok) {
+            submitBtn.textContent = '\u2713 \u8bc4\u4ef7\u6210\u529f';
+            submitBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+            setTimeout(closeModal, 900);
+          } else {
+            submitBtn.textContent = '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5';
+            submitBtn.disabled = false;
+          }
+        });
+      });
+    }
+  }
+  // ─── 评价弹窗模块 END ───────────────────────────────────────────
+
   // 停止随机滚动，确定最终结果
   function stopRandomRoll(doc) {
     if (!randomCallState.isRolling) return;
@@ -2988,6 +3167,14 @@
 
     setRandomDisplay(doc, picked.name, '\u2728 \u88ab\u70b9\u5230\u4e86\uff01');
     updateCallCountCard(doc);
+
+    // 抽取成功后弹出评价弹窗
+    var cls = window.__selectedClass__ ||
+      (function () {
+        try { if (window.parent && window.parent !== window) return window.parent.__selectedClass__; } catch (_) { }
+        return null;
+      }());
+    setTimeout(function () { showEvaluationModal(doc, picked, cls); }, 600);
 
     // 4秒后副标题恢复为"等待抽取"
     setTimeout(function () {
