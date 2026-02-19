@@ -3010,6 +3010,37 @@
     }
   }
 
+  // 更新"最近评价学生"卡片（bg-vibrant-orange）
+  function updateRecentEvalCard(studentName, score) {
+    var starStr = '';
+    for (var si = 0; si < score; si++) starStr += '\u2605';
+    for (var se = score; se < 5; se++) starStr += '\u2606';
+    var docs = [document];
+    try {
+      var ifrEl = document.getElementById('dynamicIframe');
+      if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+    } catch (_) { }
+    try {
+      if (window.parent && window.parent !== window) {
+        var pIfr = window.parent.document.getElementById('dynamicIframe');
+        if (pIfr && pIfr.contentDocument) docs.push(pIfr.contentDocument);
+      }
+    } catch (_) { }
+    for (var i = 0; i < docs.length; i++) {
+      var d = docs[i];
+      if (!d) continue;
+      var orangeCard = d.querySelector('.bg-vibrant-orange');
+      if (!orangeCard) continue;
+      var numEl = orangeCard.querySelector('[class*="text-3xl"]');
+      if (numEl) numEl.textContent = studentName;
+      // 小字副标题（text-xs 元素）
+      var subEl = orangeCard.querySelector('p[class*="text-xs"], div[class*="text-xs"]');
+      if (subEl) subEl.textContent = starStr + ' ' + score + '\u661f\u597d\u8bc4';
+      console.log('[eval] Recent eval card updated:', studentName, score);
+      return;
+    }
+  }
+
   function showEvaluationModal(doc, student, cls) {
     if (!doc || !doc.body) return;
     // 移除已有弹窗
@@ -3157,8 +3188,10 @@
             submitBtn.textContent = '\u2713 \u8bc4\u4ef7\u6210\u529f';
             submitBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
             // 更新当堂得星总计卡片
-            if (typeof ok === 'number') updateStarCountCard(ok);
-            else updateStarCountCard(selectedScore);
+            var scoreVal = (typeof ok === 'number') ? ok : selectedScore;
+            updateStarCountCard(scoreVal);
+            // 更新最近评价学生卡片
+            updateRecentEvalCard(student.name, scoreVal);
             setTimeout(closeModal, 900);
           } else {
             submitBtn.textContent = '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5';
