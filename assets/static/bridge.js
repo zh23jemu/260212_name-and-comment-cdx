@@ -2717,7 +2717,8 @@
     rollTimer: null,
     students: [],
     usedInSession: [],
-    sessionCount: 0
+    sessionCount: 0,
+    sessionStars: 0
   };
 
   function detectTeacherClassroomPage() {
@@ -2972,10 +2973,40 @@
         return false;
       }
       console.log('[eval] Evaluation submitted: score=' + score + ' tags=' + tags.join(','));
-      return true;
+      return score; // 返回分数供调用方累计
     } catch (e) {
       console.error('[eval] Network error:', e);
       return false;
+    }
+  }
+
+  // 更新"当堂得星总计"卡片（bg-vibrant-purple）
+  function updateStarCountCard(starsToAdd) {
+    randomCallState.sessionStars += starsToAdd;
+    var total = randomCallState.sessionStars;
+    var docs = [document];
+    try {
+      var ifrEl = document.getElementById('dynamicIframe');
+      if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+    } catch (_) { }
+    try {
+      if (window.parent && window.parent !== window) {
+        var pIfr = window.parent.document.getElementById('dynamicIframe');
+        if (pIfr && pIfr.contentDocument) docs.push(pIfr.contentDocument);
+      }
+    } catch (_) { }
+    for (var i = 0; i < docs.length; i++) {
+      var d = docs[i];
+      if (!d) continue;
+      var purpleCard = d.querySelector('.bg-vibrant-purple');
+      if (purpleCard) {
+        var numEl = purpleCard.querySelector('[class*="text-3xl"]');
+        if (numEl) {
+          numEl.textContent = String(total);
+          console.log('[eval] Star count updated to:', total);
+          return;
+        }
+      }
     }
   }
 
@@ -3125,6 +3156,9 @@
           if (ok) {
             submitBtn.textContent = '\u2713 \u8bc4\u4ef7\u6210\u529f';
             submitBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+            // 更新当堂得星总计卡片
+            if (typeof ok === 'number') updateStarCountCard(ok);
+            else updateStarCountCard(selectedScore);
             setTimeout(closeModal, 900);
           } else {
             submitBtn.textContent = '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5';
