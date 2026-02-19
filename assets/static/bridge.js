@@ -2999,14 +2999,99 @@
       }
     }, 4000);
 
-    // 解绑停止事件
-    if (randomCallState._stopHandler) {
-      var bd = getClassroomDoc() || document;
-      bd.removeEventListener('click', randomCallState._stopHandler, true);
-      randomCallState._stopHandler = null;
-    }
-
     console.log('[randomCall] Picked:', picked.name, '| Total today:', randomCallState.sessionCount);
+
+    // 解绑 stopHandler（也推迟，避免影响本次事件传播）
+    var _doc = doc;
+    var _stopH = randomCallState._stopHandler;
+    randomCallState._stopHandler = null;
+
+    // ⚠️ 关键：将按钮恢复推迟到当前事件传播全部结束后
+    // 这样本次点击事件链里，按钮文字仍是"停止 抽取"，
+    // bindRandomCallHandler 不会误认为是"开始"而重新启动
+    setTimeout(function () {
+      if (_stopH) {
+        var bd = getClassroomDoc() || document;
+        bd.removeEventListener('click', _stopH, true);
+      }
+      setStartButtonRolling(_doc, false);
+    }, 0);
+  }
+
+  // 切换"开始随机抽取"按钮的状态
+  function setStartButtonRolling(doc, isRolling) {
+    var docs = [doc, document];
+    try {
+      var ifrEl = document.getElementById('dynamicIframe');
+      if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+    } catch (_) { }
+    try {
+      if (window.parent && window.parent !== window) {
+        var pIfr = window.parent.document.getElementById('dynamicIframe');
+        if (pIfr && pIfr.contentDocument) docs.push(pIfr.contentDocument);
+      }
+    } catch (_) { }
+
+    for (var di = 0; di < docs.length; di++) {
+      var d = docs[di];
+      if (!d) continue;
+      var buttons = d.querySelectorAll('button');
+      for (var bi = 0; bi < buttons.length; bi++) {
+        var btn = buttons[bi];
+        var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+        var isStart = txt.indexOf('\u5f00\u59cb\u968f\u673a\u62bd\u53d6') >= 0 || txt.indexOf('\u5f00\u59cb\u968f\u673a') >= 0;
+        var isStop = txt.indexOf('\u505c\u6b62\u62bd\u53d6') >= 0;
+        if (!isStart && !isStop) continue;
+
+        if (isRolling) {
+          // 变为红色“停止 抽取”按钮
+          btn.setAttribute('data-original-class', btn.className);
+          btn.style.cssText = 'background: linear-gradient(135deg, #ef4444, #dc2626); color: white; ' +
+            'border: none; box-shadow: 0 4px 15px rgba(239,68,68,0.4); transition: all 0.3s;';
+          // 换图标和文字
+          var svgEl = btn.querySelector('svg');
+          if (svgEl) {
+            svgEl.classList.remove('animate-bounce');
+            // 替换为停止图标 (square stop)
+            svgEl.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>';
+          }
+          // 更改文字节点
+          var textNode = null;
+          for (var ni = 0; ni < btn.childNodes.length; ni++) {
+            if (btn.childNodes[ni].nodeType === 3 && (btn.childNodes[ni].textContent || '').trim()) {
+              textNode = btn.childNodes[ni];
+            }
+          }
+          if (textNode) {
+            textNode.textContent = ' \u505c\u6b62 \u62bd\u53d6';
+          }
+          btn.setAttribute('data-rolling-state', '1');
+        } else {
+          // 恢复原始样式
+          btn.style.cssText = '';
+          var origClass = btn.getAttribute('data-original-class');
+          if (origClass) btn.className = origClass;
+          btn.removeAttribute('data-original-class');
+          btn.removeAttribute('data-rolling-state');
+          var svgEl2 = btn.querySelector('svg');
+          if (svgEl2) {
+            svgEl2.classList.add('animate-bounce');
+            // 恢复 sparkle 图标
+            svgEl2.innerHTML = '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/>';
+          }
+          var textNode2 = null;
+          for (var ni2 = 0; ni2 < btn.childNodes.length; ni2++) {
+            if (btn.childNodes[ni2].nodeType === 3 && (btn.childNodes[ni2].textContent || '').trim()) {
+              textNode2 = btn.childNodes[ni2];
+            }
+          }
+          if (textNode2) {
+            textNode2.textContent = ' \u5f00\u59cb \u968f\u673a\u62bd\u53d6';
+          }
+        }
+        return; // 找到并处理了第一个，退出
+      }
+    }
   }
 
   // 开始随机滚动动画
@@ -3025,6 +3110,7 @@
 
     randomCallState.students = students;
     randomCallState.isRolling = true;
+    setStartButtonRolling(doc, true); // 按钮变为停止状态
 
     setRandomDisplay(doc, students[0].name, '\u6b63\u5728\u62bd\u53d6...');
 
@@ -3036,13 +3122,18 @@
       if (nameEl) nameEl.textContent = students[idx].name;
     }, speed);
 
-    // 绑定点击任意处停止（排除"开始随机抽取"按钮自身，防止竞争）
+    // 绑定点击任意处停止（排除「开始随机抽取」按钮自身，防止竞争）
     var stopHandler = function (e) {
       var btn = e.target ? e.target.closest('button') : null;
       if (btn) {
         var btnTxt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
-        if (btnTxt.indexOf('开始随机抽取') >= 0 || btnTxt.indexOf('开始随机') >= 0) {
-          // 是启动按钮本身，交由 startRandomRoll 处理，无需在此停止
+        // 如果点的是“停止抽取”按钮，允许并主动调用停止
+        if (btnTxt.indexOf('\u505c\u6b62\u62bd\u53d6') >= 0) {
+          stopRandomRoll(doc);
+          return;
+        }
+        // 如果点的是按钮且文字包含开始随机（已变成停止前的残留），跳过
+        if (btnTxt.indexOf('\u5f00\u59cb\u968f\u673a\u62bd\u53d6') >= 0 || btnTxt.indexOf('\u5f00\u59cb\u968f\u673a') >= 0) {
           return;
         }
       }
@@ -3064,10 +3155,18 @@
       if (!btn) return;
 
       var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
-      if (txt.indexOf('开始随机抽取') >= 0 || txt.indexOf('开始随机') >= 0) {
+      if (txt.indexOf('\u5f00\u59cb\u968f\u673a\u62bd\u53d6') >= 0 || txt.indexOf('\u5f00\u59cb\u968f\u673a') >= 0) {
+        if (randomCallState._stoppingNow) { event.preventDefault(); event.stopPropagation(); return; }
         event.preventDefault();
         event.stopPropagation();
         startRandomRoll(doc);
+        return;
+      }
+      // \u201c\u505c\u6b62\u62bd\u53d6\u201d\u6309\u9215\u4e5f\u89e6\u53d1\u505c\u6b62
+      if (txt.indexOf('\u505c\u6b62\u62bd\u53d6') >= 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        stopRandomRoll(doc);
         return;
       }
     }, true);
@@ -3085,9 +3184,16 @@
         if (!btn) return;
         var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
         if (txt.indexOf('\u5f00\u59cb\u968f\u673a\u62bd\u53d6') >= 0 || txt.indexOf('\u5f00\u59cb\u968f\u673a') >= 0) {
+          if (randomCallState._stoppingNow) { event.preventDefault(); event.stopPropagation(); return; }
           event.preventDefault();
           event.stopPropagation();
           startRandomRoll(doc);
+          return;
+        }
+        if (txt.indexOf('\u505c\u6b62\u62bd\u53d6') >= 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          stopRandomRoll(doc);
         }
       }, true);
 
