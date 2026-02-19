@@ -2573,9 +2573,22 @@
             selectButton.setAttribute('data-state', 'closed');
             selectButton.setAttribute('aria-expanded', 'false');
 
-            // Store selected class
+            // Store selected class on BOTH outer shell window and iframe window
+            // so fetchStudentsForCurrentClass can find it regardless of context
             window.__selectedClass__ = cls;
-            console.log('[loadTeacherClasses] Selected class:', cls.name);
+            try {
+              if (window.parent && window.parent !== window) {
+                window.parent.__selectedClass__ = cls;
+              }
+            } catch (_) { }
+            // Also push into iframe if we are in the shell
+            try {
+              var iframeWin = (document.getElementById('dynamicIframe') || {}).contentWindow;
+              if (iframeWin && iframeWin !== window) {
+                iframeWin.__selectedClass__ = cls;
+              }
+            } catch (_) { }
+            console.log('[loadTeacherClasses] Selected class:', cls.name, '(synced to all windows)');
           });
 
           dropdown.appendChild(option);
@@ -2625,6 +2638,290 @@
     }
   }
 
+  // ─── 随机点名模块 ───────────────────────────────────────────────
+  var randomCallState = {
+    isRolling: false,
+    rollTimer: null,
+    students: [],
+    usedInSession: []
+  };
+
+  function detectTeacherClassroomPage() {
+    return (document.title || '').indexOf('课堂教学主界面') >= 0;
+  }
+
+  // 获取课堂主界面的 document（可能在 iframe 内）
+  function getClassroomDoc() {
+    // bridge.js 注入在 iframe 内部时，document 就是课堂页面
+    if (detectTeacherClassroomPage()) {
+      return document;
+    }
+    // bridge.js 注入在外层 shell 时，尝试读取 iframe
+    var iframe = document.getElementById('dynamicIframe');
+    if (iframe && iframe.contentDocument &&
+      (iframe.contentDocument.title || '').indexOf('课堂教学主界面') >= 0) {
+      return iframe.contentDocument;
+    }
+    return null;
+  }
+
+  // 找到随机显示区域中的大文字元素（显示 ??? 或学生姓名）
+  function findRandomDisplayEl(doc) {
+    if (!doc) return null;
+    // 特征：animate-float + text-[12rem] + 包含 ??? 或姓名
+    var els = doc.querySelectorAll('div.animate-float');
+    if (els.length) return els[0];
+    // 备选：通过文字内容找
+    var all = doc.querySelectorAll('div');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if ((el.className || '').indexOf('animate-float') >= 0) return el;
+    }
+    return null;
+  }
+
+  // 找到副标题（显示 "等待抽取" / "滚动中..." / 学生姓名提示）
+  function findRandomSubtitleEl(doc) {
+    if (!doc) return null;
+    var all = doc.querySelectorAll('div');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var txt = (el.textContent || '').trim();
+      if ((txt === '等待抽取' || txt === '滚动中...' || txt === '点击任意处停止') &&
+        el.children.length === 0) {
+        return el;
+      }
+    }
+    // 宽松匹配：tracking-[0.5em] / text-slate-400
+    for (var j = 0; j < all.length; j++) {
+      var e2 = all[j];
+      if ((e2.className || '').indexOf('tracking-') >= 0 &&
+        (e2.className || '').indexOf('font-bold') >= 0 &&
+        e2.children.length === 0) {
+        return e2;
+      }
+    }
+    return null;
+  }
+
+  // 更新显示文字
+  function setRandomDisplay(doc, nameText, subtitleText) {
+    var nameEl = findRandomDisplayEl(doc);
+    if (nameEl) {
+      nameEl.textContent = nameText;
+    }
+    var subEl = findRandomSubtitleEl(doc);
+    if (subEl) {
+      subEl.textContent = subtitleText;
+    }
+  }
+
+  // 获取当前班级的学生列表（通过 API）
+  async function fetchStudentsForCurrentClass() {
+    // 优先使用已选班级——跨 window 查找（bridge.js 同时运行在 shell 和 iframe 两个 window 中）
+    var cls = window.__selectedClass__ ||
+      (function () {
+        // 当前是 iframe，尝试从 parent shell 读
+        try {
+          if (window.parent && window.parent !== window && window.parent.__selectedClass__) {
+            return window.parent.__selectedClass__;
+          }
+        } catch (_) { }
+        // 当前是 shell，尝试从 iframe 读
+        try {
+          var iw = (document.getElementById('dynamicIframe') || {}).contentWindow;
+          if (iw && iw.__selectedClass__) return iw.__selectedClass__;
+        } catch (_) { }
+        return null;
+      }()) ||
+      (window.__teacherAccessibleClasses__ && window.__teacherAccessibleClasses__[0]) ||
+      (function () {
+        try {
+          if (window.parent && window.parent !== window && window.parent.__teacherAccessibleClasses__) {
+            return window.parent.__teacherAccessibleClasses__[0];
+          }
+        } catch (_) { }
+        return null;
+      }());
+
+    // 终极 fallback：直接从 API 获取班级列表取第一个
+    if (!cls) {
+      try {
+        console.warn('[randomCall] No class in window, fetching from API...');
+        var clsRes = await fetch(API_BASE + '/api/classes', { headers: getAuthHeader() });
+        if (clsRes.ok) {
+          var allCls = await clsRes.json();
+          if (Array.isArray(allCls) && allCls.length) {
+            cls = allCls[0];
+            console.log('[randomCall] Fallback class:', cls.name);
+          }
+        }
+      } catch (_) { }
+    }
+
+    if (!cls) {
+      console.warn('[randomCall] No class available at all');
+      return [];
+    }
+
+    console.log('[randomCall] Fetching students for class:', cls.name, 'id:', cls.id);
+
+    try {
+      // 正确的 API 路径：/api/classes/:id/students
+      var res = await fetch(API_BASE + '/api/classes/' + cls.id + '/students', {
+        headers: getAuthHeader()
+      });
+      if (!res.ok) {
+        console.error('[randomCall] API error:', res.status);
+        return [];
+      }
+      var students = await res.json();
+      console.log('[randomCall] Got', students.length, 'students from API');
+      return Array.isArray(students) ? students.filter(function (s) {
+        return s.status !== 'inactive' && s.name;
+      }) : [];
+    } catch (err) {
+      console.error('[randomCall] fetch error:', err);
+      return [];
+    }
+  }
+
+  // 停止随机滚动，确定最终结果
+  function stopRandomRoll(doc) {
+    if (!randomCallState.isRolling) return;
+    randomCallState.isRolling = false;
+
+    if (randomCallState.rollTimer) {
+      clearInterval(randomCallState.rollTimer);
+      randomCallState.rollTimer = null;
+    }
+
+    var students = randomCallState.students;
+    if (!students.length) {
+      setRandomDisplay(doc, '???', '无学生数据');
+      return;
+    }
+
+    // 从未用过的学生中随机选（不重复模式），全用完则重置
+    var available = students.filter(function (s) {
+      return randomCallState.usedInSession.indexOf(s.id) < 0;
+    });
+    if (!available.length) {
+      randomCallState.usedInSession = [];
+      available = students;
+    }
+
+    var picked = available[Math.floor(Math.random() * available.length)];
+    randomCallState.usedInSession.push(picked.id);
+
+    setRandomDisplay(doc, picked.name, '✨ 被点到了！');
+
+    // 3秒后恢复副标题
+    setTimeout(function () {
+      var d = getClassroomDoc();
+      if (d) {
+        var subEl = findRandomSubtitleEl(d);
+        if (subEl && subEl.textContent === '✨ 被点到了！') {
+          subEl.textContent = '等待抽取';
+        }
+      }
+    }, 4000);
+
+    // 解绑停止事件
+    if (randomCallState._stopHandler) {
+      var bd = getClassroomDoc() || document;
+      bd.removeEventListener('click', randomCallState._stopHandler, true);
+      randomCallState._stopHandler = null;
+    }
+
+    console.log('[randomCall] Picked:', picked.name);
+  }
+
+  // 开始随机滚动动画
+  async function startRandomRoll(doc) {
+    if (randomCallState.isRolling) {
+      // 已在滚动中 -> 停止
+      stopRandomRoll(doc);
+      return;
+    }
+
+    var students = await fetchStudentsForCurrentClass();
+    if (!students.length) {
+      window.alert('当前班级暂无学生数据，请先在「班级学生管理」中录入学生。');
+      return;
+    }
+
+    randomCallState.students = students;
+    randomCallState.isRolling = true;
+
+    setRandomDisplay(doc, students[0].name, '点击任意处停止');
+
+    var idx = 0;
+    var speed = 80; // ms
+    randomCallState.rollTimer = setInterval(function () {
+      idx = (idx + 1) % students.length;
+      var nameEl = findRandomDisplayEl(doc);
+      if (nameEl) nameEl.textContent = students[idx].name;
+    }, speed);
+
+    // 绑定点击任意处停止（排除"开始随机抽取"按钮自身，防止竞争）
+    var stopHandler = function (e) {
+      var btn = e.target ? e.target.closest('button') : null;
+      if (btn) {
+        var btnTxt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+        if (btnTxt.indexOf('开始随机抽取') >= 0 || btnTxt.indexOf('开始随机') >= 0) {
+          // 是启动按钮本身，交由 startRandomRoll 处理，无需在此停止
+          return;
+        }
+      }
+      stopRandomRoll(doc);
+    };
+    randomCallState._stopHandler = stopHandler;
+    doc.addEventListener('click', stopHandler, true);
+  }
+
+  function bindRandomCallHandler() {
+    if (document.body.getAttribute('data-random-call-bound') === '1') return;
+    document.body.setAttribute('data-random-call-bound', '1');
+
+    document.body.addEventListener('click', function (event) {
+      var doc = getClassroomDoc();
+      if (!doc) return;
+
+      var btn = event.target.closest('button');
+      if (!btn) return;
+
+      var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+      if (txt.indexOf('开始随机抽取') >= 0 || txt.indexOf('开始随机') >= 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        startRandomRoll(doc);
+        return;
+      }
+    }, true);
+
+    // 同时监听 iframe 内部的点击（bridge 注入在 iframe 内时）
+    // 通过在 iframe document 上也绑定按钮监听
+    setTimeout(function () {
+      var doc = getClassroomDoc();
+      if (!doc || doc === document) return;
+      if (doc.body.getAttribute('data-random-call-bound-inner') === '1') return;
+      doc.body.setAttribute('data-random-call-bound-inner', '1');
+
+      doc.body.addEventListener('click', function (event) {
+        var btn = event.target.closest('button');
+        if (!btn) return;
+        var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+        if (txt.indexOf('开始随机抽取') >= 0 || txt.indexOf('开始随机') >= 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          startRandomRoll(doc);
+        }
+      }, true);
+    }, 1200);
+  }
+  // ─── 随机点名模块 END ─────────────────────────────────────────────
+
   bootstrapFromServer();
   checkAuthSession();
   mirrorWholeStorage();
@@ -2634,6 +2931,7 @@
   bindDashboardRefreshHandler();
   bindLoginHandler();
   bindLogoutHandler();
+  bindRandomCallHandler();
   setTimeout(function () { runUserInfoOverride(); }, 500);
   setTimeout(function () { runUserInfoOverride(); }, 1500);
   setTimeout(function () { runUserInfoOverride(); }, 3000);
@@ -2647,6 +2945,8 @@
   setTimeout(function () { loadTeacherClasses(); }, 1000);
   setTimeout(function () { loadTeacherClasses(); }, 2000);
   setTimeout(function () { loadTeacherClasses(); }, 3500);
+  setTimeout(function () { bindRandomCallHandler(); }, 1500);
+  setTimeout(function () { bindRandomCallHandler(); }, 3000);
 
   window.sqliteBridge = {
     namespace: NAMESPACE,
