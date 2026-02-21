@@ -21,6 +21,16 @@ export default async function authRoutes(fastify) {
     }
 
     const session = createSession(user.id);
+    
+    // Set session cookie
+    reply.setCookie('session_token', session.token, {
+      httpOnly: true,
+      secure: false, // Set to true in production with HTTPS
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 // 7 days in seconds
+    });
+    
     return {
       token: session.token,
       expiresAt: session.expiresAt,
@@ -30,5 +40,14 @@ export default async function authRoutes(fastify) {
 
   fastify.get('/api/auth/me', { preHandler: requireAuth }, async (request) => {
     return { user: request.user };
+  });
+  
+  fastify.post('/api/auth/logout', async (request, reply) => {
+    const token = request.cookies.session_token;
+    if (token) {
+      db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+    }
+    reply.clearCookie('session_token', { path: '/' });
+    return { ok: true };
   });
 }

@@ -474,25 +474,16 @@
         return iframe && iframe.contentDocument ? iframe.contentDocument : null;
       }
 
-      // Get auth token from localStorage
-      function getAuthToken() {
-        return localStorage.getItem('authToken') || '';
-      }
-
       // Fetch user statistics from backend
       async function fetchUserStats() {
         try {
-          const token = getAuthToken();
-          if (!token) {
-            console.log('No auth token, using default stats');
-            return currentStats;
-          }
+          console.log('[Stats] Fetching teacher statistics...');
 
           // Fetch teacher statistics from database
+          console.log('[Stats] Fetching from /api/statistics/teacher...');
           const teacherStatsResponse = await fetch(`${API_BASE}/api/statistics/teacher`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
+            credentials: 'include' // Important: include cookies
+          });
           });
 
           let teacherStats = {
@@ -502,13 +493,34 @@
 
           if (teacherStatsResponse.ok) {
             teacherStats = await teacherStatsResponse.json();
+            console.log('[Stats] Teacher stats fetched successfully:', teacherStats);
+          } else {
+            console.warn('[Stats] Teacher stats request failed:', teacherStatsResponse.status, teacherStatsResponse.statusText);
+            
+            // If unauthorized, clear session and redirect to login
+            if (teacherStatsResponse.status === 401) {
+              console.warn('[Stats] Session expired or invalid, redirecting to login...');
+              
+              // Clear session on server
+              await fetch(`${API_BASE}/api/auth/logout`, {
+                method: 'POST',
+                credentials: 'include'
+              });
+              
+              // Show alert and redirect after a short delay
+              setTimeout(() => {
+                if (confirm('登录已过期，请重新登录')) {
+                  window.location.href = '/教师登录页.html';
+                }
+              }, 1000);
+              return currentStats;
+            }
           }
 
           // Fetch session statistics from kv store
-          const kvResponse = await fetch(`${API_BASE}/api/kv/snapshot?namespace=teacher_stats_${token.slice(0, 8)}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
+          const kvResponse = await fetch(`${API_BASE}/api/kv/snapshot?namespace=teacher_stats_session`, {
+            credentials: 'include'
+          });
           });
 
           let kvStats = {

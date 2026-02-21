@@ -2,6 +2,7 @@ import path from 'node:path';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
+import fastifyCookie from '@fastify/cookie';
 import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
 import kvRoutes from './routes/kv.js';
@@ -12,6 +13,8 @@ await app.register(cors, {
   origin: true,
   credentials: true
 });
+
+await app.register(fastifyCookie);
 
 const rootDir = path.resolve(process.cwd(), '..');
 

@@ -46,8 +46,15 @@ export function resolveSession(token) {
 }
 
 export function requireAuth(request, reply, done) {
+  // Try to get token from Authorization header first, then from cookie
   const authHeader = request.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  // If no Authorization header, try cookie
+  if (!token && request.cookies && request.cookies.session_token) {
+    token = request.cookies.session_token;
+  }
+  
   const session = resolveSession(token);
 
   if (!session) {
