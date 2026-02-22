@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课堂互动分组管理</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 24px;
+    }
+
+    .header-title h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 4px;
+    }
+
+    .header-title p {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 400px;
+      gap: 24px;
+    }
+
+    .group-card {
+      background: white;
+      border: 2px dashed #e5e7eb;
+      border-radius: 16px;
+      padding: 20px;
+      min-height: 400px;
+      transition: all 0.3s;
+    }
+
+    .group-card.group-1 { border-color: #3b82f6; background: #eff6ff; }
+    .group-card.group-2 { border-color: #ec4899; background: #fdf2f8; }
+    .group-card.group-3 { border-color: #10b981; background: #f0fdf4; }
+    .group-card.group-4 { border-color: #f59e0b; background: #fffbeb; }
+
+    .group-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    }
+
+    .group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .group-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .group-icon {
+      font-size: 20px;
+    }
+
+    .group-name {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .group-card.group-1 .group-name { color: #3b82f6; }
+    .group-card.group-2 .group-name { color: #ec4899; }
+    .group-card.group-3 .group-name { color: #10b981; }
+    .group-card.group-4 .group-name { color: #f59e0b; }
+
+    .group-count {
+      background: white;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+    }
+
+    .group-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .group-actions button {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      background: white;
+      color: #6b7280;
+      transition: all 0.2s;
+    }
+
+    .group-actions button:hover {
+      background: #f3f4f6;
+    }
+
+    .student-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .student-item {
+      background: white;
+      padding: 12px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: move;
+      transition: all 0.2s;
+    }
+
+    .student-item:hover {
+      transform: translateX(4px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .student-item.dragging {
+      opacity: 0.5;
+    }
+
+    .student-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .student-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .student-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .student-remove {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: all 0.2s;
+    }
+
+    .student-item:hover .student-remove {
+      opacity: 1;
+    }
+
+    .student-remove:hover {
+      background: #fee2e2;
+    }
+
+    .sidebar {
+      background: #f9fafb;
+      border-radius: 16px;
+      padding: 20px;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    .sidebar-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 20px;
+    }
+
+    .sidebar-title h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .sidebar-title p {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .unassigned-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #9ca3af;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .empty-state-text {
+      font-size: 14px;
+    }
+
+    .footer-actions {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 2px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-info {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .footer-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-large {
+      padding: 12px 32px;
+      font-size: 16px;
+    }
+
+    .drag-over {
+      border-style: solid;
+      border-width: 3px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-left">
+        <div class="header-icon">👥</div>
+        <div class="header-title">
+          <h1>课堂互动分组管理</h1>
+          <p id="headerSubtitle">拖拽学生卡片进行分组 · 科学分组优化课堂管理</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="autoAssign()">
+          🎲 自动分组
+        </button>
+        <button class="btn btn-secondary" onclick="clearAll()">
+          🔄 重置分组
+        </button>
+        <button class="btn btn-secondary" onclick="window.close()">
+          ✕ 关闭
+        </button>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="group-card group-1" data-group="1" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="dragLeave(event)">
+        <div class="group-header">
+          <div class="group-title">
+            <span class="group-icon">👥</span>
+            <span class="group-name">第 1 组</span>
+          </div>
+          <span class="group-count">全员: <span id="count-1">0</span></span>
+        </div>
+        <div class="group-actions">
+          <button onclick="clearGroup(1)">清空成员</button>
+          <button onclick="addMember(1)">从池添加</button>
+        </div>
+        <div class="student-list" id="group-1"></div>
+      </div>
+
+      <div class="group-card group-2" data-group="2" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="dragLeave(event)">
+        <div class="group-header">
+          <div class="group-title">
+            <span class="group-icon">👥</span>
+            <span class="group-name">第 2 组</span>
+          </div>
+          <span class="group-count">全员: <span id="count-2">0</span></span>
+        </div>
+        <div class="group-actions">
+          <button onclick="clearGroup(2)">清空成员</button>
+          <button onclick="addMember(2)">从池添加</button>
+        </div>
+        <div class="student-list" id="group-2"></div>
+      </div>
+
+      <div class="group-card group-3" data-group="3" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="dragLeave(event)">
+        <div class="group-header">
+          <div class="group-title">
+            <span class="group-icon">👥</span>
+            <span class="group-name">第 3 组</span>
+          </div>
+          <span class="group-count">全员: <span id="count-3">0</span></span>
+        </div>
+        <div class="group-actions">
+          <button onclick="clearGroup(3)">清空成员</button>
+          <button onclick="addMember(3)">从池添加</button>
+        </div>
+        <div class="student-list" id="group-3"></div>
+      </div>
+
+      <div class="group-card group-4" data-group="4" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="dragLeave(event)">
+        <div class="group-header">
+          <div class="group-title">
+            <span class="group-icon">👥</span>
+            <span class="group-name">第 4 组</span>
+          </div>
+          <span class="group-count">全员: <span id="count-4">0</span></span>
+        </div>
+        <div class="group-actions">
+          <button onclick="clearGroup(4)">清空成员</button>
+          <button onclick="addMember(4)">从池添加</button>
+        </div>
+        <div class="student-list" id="group-4"></div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-icon">📋</div>
+        <div class="sidebar-title">
+          <h3>待分配成员</h3>
+          <p>未分组: <span id="unassigned-count">0</span></p>
+        </div>
+      </div>
+      <div class="unassigned-list" id="unassigned-pool" ondrop="drop(event)" ondragover="allowDrop(event)" ondragleave="dragLeave(event)">
+        <div class="empty-state">
+          <div class="empty-state-icon">✅</div>
+          <div class="empty-state-text">全部已分配完毕<br>拖拽学生卡片到此处取消分组</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-actions">
+      <div class="footer-info">
+        💡 提示: 拖拽学生卡片到不同分组，或点击"自动分组"按钮进行智能分配
+      </div>
+      <div class="footer-buttons">
+        <button class="btn btn-secondary btn-large" onclick="window.close()">取消</button>
+        <button class="btn btn-primary btn-large" onclick="saveGroups()">完成确认并保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 学生数据（从数据库加载）
+    let students = [];
+    let currentClassName = '';
+
+    // 分组数据
+    const groups = {
+      1: [],
+      2: [],
+      3: [],
+      4: [],
+      unassigned: []
+    };
+
+    // 获取当前班级信息
+    async function getCurrentClassInfo() {
+      try {
+        const currentClassId = localStorage.getItem('currentClassId');
+        
+        if (!currentClassId) {
+          return null;
+        }
+
+        // 获取班级信息
+        const response = await fetch('/api/classes', {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error('获取班级信息失败');
+        }
+
+        const classes = await response.json();
+        const currentClass = classes.find(c => c.id === parseInt(currentClassId));
+        
+        if (currentClass) {
+          currentClassName = currentClass.name + (currentClass.grade ? ` (${currentClass.grade})` : '');
+          // 更新页面标题
+          const subtitle = document.getElementById('headerSubtitle');
+          if (subtitle) {
+            subtitle.textContent = `当前班级: ${currentClassName} · 拖拽学生卡片进行分组`;
+          }
+        }
+
+        return currentClass;
+      } catch (error) {
+        console.error('获取班级信息失败:', error);
+        return null;
+      }
+    }
+
+    // 从数据库加载学生数据
+    async function loadStudentsFromDB() {
+      try {
+        // 从localStorage获取当前选择的班级ID
+        const currentClassId = localStorage.getItem('currentClassId');
+        
+        if (!currentClassId) {
+          console.warn('未选择班级');
+          showError('请先在课堂教学主界面选择班级');
+          return [];
+        }
+
+        console.log('正在加载班级学生数据，班级ID:', currentClassId);
+        
+        const response = await fetch(`/api/classes/${currentClassId}/students`, {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error(`加载学生数据失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('成功加载学生数据:', data);
+        
+        // 转换数据格式
+        return data.map(student => ({
+          id: student.id,
+          name: student.name,
+          studentNo: student.studentNo
+        }));
+      } catch (error) {
+        console.error('加载学生数据失败:', error);
+        showError('加载学生数据失败，请刷新页面重试');
+        return [];
+      }
+    }
+
+    // 显示错误信息
+    function showError(message) {
+      const container = document.querySelector('.container');
+      const errorDiv = document.createElement('div');
+      errorDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #fee2e2;
+        color: #dc2626;
+        padding: 16px 24px;
+        border-radius: 12px;
+        border: 2px solid #fca5a5;
+        font-weight: 600;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      `;
+      errorDiv.textContent = message;
+      document.body.appendChild(errorDiv);
+      
+      setTimeout(() => {
+        errorDiv.remove();
+      }, 5000);
+    }
+
+    // 从localStorage加载已保存的分组数据
+    function loadSavedGroups() {
+      try {
+        const saved = localStorage.getItem('classroomGroups');
+        if (saved) {
+          const data = JSON.parse(saved);
+          console.log('加载已保存的分组数据:', data);
+          
+          // 恢复分组数据
+          groups[1] = data.group1 || [];
+          groups[2] = data.group2 || [];
+          groups[3] = data.group3 || [];
+          groups[4] = data.group4 || [];
+          groups.unassigned = data.unassigned || [];
+          
+          return true;
+        }
+      } catch (error) {
+        console.error('加载保存的分组数据失败:', error);
+      }
+      return false;
+    }
+
+    // 初始化页面
+    async function init() {
+      // 显示加载提示
+      const pool = document.getElementById('unassigned-pool');
+      pool.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-text">正在加载学生数据...</div></div>';
+      
+      // 从数据库加载学生数据
+      students = await loadStudentsFromDB();
+      
+      if (students.length === 0) {
+        pool.innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">未找到学生数据<br>请确保已选择班级</div></div>';
+        return;
+      }
+
+      // 尝试加载已保存的分组
+      const hasSavedGroups = loadSavedGroups();
+      
+      if (!hasSavedGroups) {
+        // 如果没有保存的分组，将所有学生放入待分配池
+        groups.unassigned = [...students];
+      } else {
+        // 验证保存的分组数据中的学生是否还存在
+        const currentStudentIds = new Set(students.map(s => s.id));
+        
+        // 清理不存在的学生
+        for (let i = 1; i <= 4; i++) {
+          groups[i] = groups[i].filter(s => currentStudentIds.has(s.id));
+        }
+        groups.unassigned = groups.unassigned.filter(s => currentStudentIds.has(s.id));
+        
+        // 找出新增的学生（在数据库中但不在任何分组中）
+        const assignedIds = new Set([
+          ...groups[1].map(s => s.id),
+          ...groups[2].map(s => s.id),
+          ...groups[3].map(s => s.id),
+          ...groups[4].map(s => s.id),
+          ...groups.unassigned.map(s => s.id)
+        ]);
+        
+        const newStudents = students.filter(s => !assignedIds.has(s.id));
+        if (newStudents.length > 0) {
+          console.log('发现新增学生:', newStudents);
+          groups.unassigned.push(...newStudents);
+        }
+      }
+
+      // 渲染所有分组
+      renderGroup(1);
+      renderGroup(2);
+      renderGroup(3);
+      renderGroup(4);
+      renderUnassigned();
+      updateCounts();
+    }
+
+    // 渲染未分配学生
+    function renderUnassigned() {
+      const pool = document.getElementById('unassigned-pool');
+      pool.innerHTML = '';
+      
+      if (groups.unassigned.length === 0) {
+        pool.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">✅</div>
+            <div class="empty-state-text">全部已分配完毕<br>拖拽学生卡片到此处取消分组</div>
+          </div>
+        `;
+        return;
+      }
+
+      groups.unassigned.forEach(student => {
+        pool.appendChild(createStudentCard(student, 'unassigned'));
+      });
+    }
+
+    // 渲染分组
+    function renderGroup(groupId) {
+      const groupEl = document.getElementById(`group-${groupId}`);
+      groupEl.innerHTML = '';
+      
+      if (groups[groupId].length === 0) {
+        groupEl.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">👋</div>
+            <div class="empty-state-text">拖拽成员到此处<br>或点击"从池添加"</div>
+          </div>
+        `;
+        return;
+      }
+
+      groups[groupId].forEach(student => {
+        groupEl.appendChild(createStudentCard(student, groupId));
+      });
+    }
+
+    // 创建学生卡片
+    function createStudentCard(student, groupId) {
+      const card = document.createElement('div');
+      card.className = 'student-item';
+      card.draggable = true;
+      card.dataset.studentId = student.id;
+      card.dataset.groupId = groupId;
+      
+      card.innerHTML = `
+        <div class="student-info">
+          <div class="student-avatar">${student.name.charAt(0)}</div>
+          <span class="student-name">${student.name}</span>
+        </div>
+        <button class="student-remove" onclick="removeStudent(${student.id}, '${groupId}')">✕</button>
+      `;
+
+      card.addEventListener('dragstart', drag);
+      card.addEventListener('dragend', dragEnd);
+      
+      return card;
+    }
+
+    // 拖拽开始
+    function drag(e) {
+      e.dataTransfer.setData('studentId', e.target.dataset.studentId);
+      e.dataTransfer.setData('fromGroup', e.target.dataset.groupId);
+      e.target.classList.add('dragging');
+    }
+
+    // 拖拽结束
+    function dragEnd(e) {
+      e.target.classList.remove('dragging');
+    }
+
+    // 允许放置
+    function allowDrop(e) {
+      e.preventDefault();
+      e.currentTarget.classList.add('drag-over');
+    }
+
+    // 离开拖拽区域
+    function dragLeave(e) {
+      e.currentTarget.classList.remove('drag-over');
+    }
+
+    // 放置
+    function drop(e) {
+      e.preventDefault();
+      e.currentTarget.classList.remove('drag-over');
+      
+      const studentId = parseInt(e.dataTransfer.getData('studentId'));
+      const fromGroup = e.dataTransfer.getData('fromGroup');
+      
+      let toGroup;
+      if (e.currentTarget.id === 'unassigned-pool') {
+        toGroup = 'unassigned';
+      } else {
+        toGroup = e.currentTarget.dataset.group;
+      }
+
+      if (fromGroup === toGroup) return;
+
+      moveStudent(studentId, fromGroup, toGroup);
+    }
+
+    // 移动学生
+    function moveStudent(studentId, fromGroup, toGroup) {
+      const student = groups[fromGroup].find(s => s.id === studentId);
+      if (!student) return;
+
+      groups[fromGroup] = groups[fromGroup].filter(s => s.id !== studentId);
+      groups[toGroup].push(student);
+
+      if (fromGroup === 'unassigned') {
+        renderUnassigned();
+      } else {
+        renderGroup(fromGroup);
+      }
+
+      if (toGroup === 'unassigned') {
+        renderUnassigned();
+      } else {
+        renderGroup(toGroup);
+      }
+
+      updateCounts();
+    }
+
+    // 移除学生
+    function removeStudent(studentId, groupId) {
+      moveStudent(studentId, groupId, 'unassigned');
+    }
+
+    // 清空分组
+    function clearGroup(groupId) {
+      if (groups[groupId].length === 0) return;
+      
+      if (confirm(`确定要清空第 ${groupId} 组的所有成员吗？`)) {
+        groups.unassigned.push(...groups[groupId]);
+        groups[groupId] = [];
+        renderGroup(groupId);
+        renderUnassigned();
+        updateCounts();
+      }
+    }
+
+    // 从池中添加成员
+    function addMember(groupId) {
+      if (groups.unassigned.length === 0) {
+        alert('没有可分配的学生了！');
+        return;
+      }
+
+      const student = groups.unassigned.shift();
+      groups[groupId].push(student);
+      renderGroup(groupId);
+      renderUnassigned();
+      updateCounts();
+    }
+
+    // 自动分组
+    function autoAssign() {
+      if (confirm('自动分组将清空现有分组并重新分配，确定继续吗？')) {
+        // 收集所有学生
+        const allStudents = [...students];
+        
+        // 清空所有分组
+        groups[1] = [];
+        groups[2] = [];
+        groups[3] = [];
+        groups[4] = [];
+        groups.unassigned = [];
+
+        // 打乱顺序
+        for (let i = allStudents.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [allStudents[i], allStudents[j]] = [allStudents[j], allStudents[i]];
+        }
+
+        // 平均分配
+        allStudents.forEach((student, index) => {
+          const groupId = (index % 4) + 1;
+          groups[groupId].push(student);
+        });
+
+        // 渲染所有分组
+        renderGroup(1);
+        renderGroup(2);
+        renderGroup(3);
+        renderGroup(4);
+        renderUnassigned();
+        updateCounts();
+      }
+    }
+
+    // 重置所有分组
+    function clearAll() {
+      if (confirm('确定要重置所有分组吗？所有学生将返回待分配池。')) {
+        groups.unassigned = [...students];
+        groups[1] = [];
+        groups[2] = [];
+        groups[3] = [];
+        groups[4] = [];
+        
+        renderGroup(1);
+        renderGroup(2);
+        renderGroup(3);
+        renderGroup(4);
+        renderUnassigned();
+        updateCounts();
+      }
+    }
+
+    // 更新计数
+    function updateCounts() {
+      document.getElementById('count-1').textContent = groups[1].length;
+      document.getElementById('count-2').textContent = groups[2].length;
+      document.getElementById('count-3').textContent = groups[3].length;
+      document.getElementById('count-4').textContent = groups[4].length;
+      document.getElementById('unassigned-count').textContent = groups.unassigned.length;
+    }
+
+    // 保存分组
+    function saveGroups() {
+      const groupData = {
+        group1: groups[1],
+        group2: groups[2],
+        group3: groups[3],
+        group4: groups[4],
+        unassigned: groups.unassigned
+      };
+
+      // 保存到 localStorage
+      localStorage.setItem('classroomGroups', JSON.stringify(groupData));
+      
+      alert('分组已保存成功！');
+      console.log('保存的分组数据:', groupData);
+      
+      // 可以在这里添加关闭窗口或返回上一页的逻辑
+      // window.close();
+    }
+
+    // 页面加载时初始化
+    window.onload = async function() {
+      // 获取当前班级信息
+      const classInfo = await getCurrentClassInfo();
+      
+      if (!classInfo) {
+        // 显示提示信息
+        const pool = document.getElementById('unassigned-pool');
+        pool.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">请先在课堂教学主界面选择班级</div></div>';
+        return;
+      }
+
+      // 加载学生数据
+      await init();
+    };
+  </script>
+</body>
+</html>

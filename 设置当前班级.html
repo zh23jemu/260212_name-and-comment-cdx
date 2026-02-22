@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置当前班级</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 48px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      font-size: 28px;
+      color: #1f2937;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #6b7280;
+      margin-bottom: 32px;
+      font-size: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 8px;
+    }
+
+    select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 16px;
+      background: white;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .current-class {
+      background: #f0f9ff;
+      border: 2px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .current-class-label {
+      font-size: 12px;
+      color: #1e40af;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .current-class-value {
+      font-size: 18px;
+      color: #1e40af;
+      font-weight: 700;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .info {
+      margin-top: 24px;
+      padding: 16px;
+      background: #fef3c7;
+      border: 2px solid #fde68a;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #92400e;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 设置当前班级</h1>
+    <p class="subtitle">用于调试和手动设置当前选择的班级</p>
+
+    <div class="current-class">
+      <div class="current-class-label">当前选择的班级</div>
+      <div class="current-class-value" id="currentClass">未设置</div>
+    </div>
+
+    <div class="form-group">
+      <label for="classSelect">选择班级</label>
+      <select id="classSelect">
+        <option value="">加载中...</option>
+      </select>
+    </div>
+
+    <button class="btn" onclick="setClass()">设置为当前班级</button>
+
+    <div class="info">
+      💡 此工具用于手动设置当前班级ID到localStorage。设置后，分组管理和小组评分功能将使用此班级。
+    </div>
+  </div>
+
+  <script>
+    let classes = [];
+
+    // 加载班级列表
+    async function loadClasses() {
+      try {
+        const response = await fetch('/api/classes', {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error('加载班级列表失败');
+        }
+
+        classes = await response.json();
+        const select = document.getElementById('classSelect');
+        
+        select.innerHTML = '<option value="">请选择班级...</option>';
+        
+        classes.forEach(cls => {
+          const option = document.createElement('option');
+          option.value = cls.id;
+          option.textContent = `${cls.name}${cls.grade ? ' (' + cls.grade + ')' : ''}`;
+          select.appendChild(option);
+        });
+
+        // 显示当前班级
+        updateCurrentClass();
+
+      } catch (error) {
+        console.error('加载班级列表失败:', error);
+        alert('加载班级列表失败');
+      }
+    }
+
+    // 更新当前班级显示
+    function updateCurrentClass() {
+      const currentClassId = localStorage.getItem('currentClassId');
+      const currentClassEl = document.getElementById('currentClass');
+      
+      if (currentClassId) {
+        const cls = classes.find(c => c.id === parseInt(currentClassId));
+        if (cls) {
+          currentClassEl.textContent = `${cls.name}${cls.grade ? ' (' + cls.grade + ')' : ''} (ID: ${cls.id})`;
+          document.getElementById('classSelect').value = currentClassId;
+        } else {
+          currentClassEl.textContent = `班级ID: ${currentClassId} (未找到对应班级)`;
+        }
+      } else {
+        currentClassEl.textContent = '未设置';
+      }
+    }
+
+    // 设置班级
+    function setClass() {
+      const select = document.getElementById('classSelect');
+      const classId = select.value;
+      
+      if (!classId) {
+        alert('请先选择班级');
+        return;
+      }
+
+      localStorage.setItem('currentClassId', classId);
+      
+      const cls = classes.find(c => c.id === parseInt(classId));
+      alert(`已设置当前班级为: ${cls.name}${cls.grade ? ' (' + cls.grade + ')' : ''}`);
+      
+      updateCurrentClass();
+    }
+
+    // 页面加载时初始化
+    window.onload = loadClasses;
+  </script>
+</body>
+</html>

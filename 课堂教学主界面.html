@@ -446,6 +446,154 @@
       }
     })();
   </script>
+  <script src="./assets/static/group-management.js"></script>
+  <script>
+    // 分组管理功能集成
+    (function() {
+      function setupGroupManagementButton() {
+        const iframe = document.getElementById('dynamicIframe');
+        if (!iframe || !iframe.contentDocument) {
+          setTimeout(setupGroupManagementButton, 100);
+          return;
+        }
+
+        const doc = iframe.contentDocument;
+        
+        // 查找所有按钮
+        const buttons = doc.querySelectorAll('button');
+        
+        for (let button of buttons) {
+          const buttonText = button.textContent.trim();
+          
+          // 找到"分组 设置"按钮
+          if (buttonText.includes('分组') && buttonText.includes('设置')) {
+            console.log('找到分组设置按钮，添加点击事件');
+            
+            // 移除可能存在的旧事件监听器
+            const newButton = button.cloneNode(true);
+            button.parentNode.replaceChild(newButton, button);
+            
+            // 添加点击事件
+            newButton.addEventListener('click', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('分组设置按钮被点击');
+              
+              // 调用打开分组管理页面的函数
+              if (typeof openGroupManagement === 'function') {
+                openGroupManagement();
+              } else {
+                console.error('openGroupManagement 函数未定义');
+              }
+            });
+            
+            break;
+          }
+        }
+      }
+
+      // 等待iframe加载完成
+      const iframe = document.getElementById('dynamicIframe');
+      if (iframe) {
+        iframe.addEventListener('load', function() {
+          setTimeout(setupGroupManagementButton, 500);
+        });
+        
+        // 如果已经加载完成，立即执行
+        if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+          setTimeout(setupGroupManagementButton, 500);
+        }
+      }
+
+      // 监听分组数据更新
+      window.onGroupDataUpdated = function(data) {
+        console.log('分组数据已更新:', data);
+        // 可以在这里更新UI显示分组信息
+      };
+
+      // 监听班级选择变化，保存到localStorage
+      function monitorClassSelection() {
+        const iframe = document.getElementById('dynamicIframe');
+        if (!iframe || !iframe.contentDocument) {
+          setTimeout(monitorClassSelection, 100);
+          return;
+        }
+
+        const doc = iframe.contentDocument;
+        
+        // 拦截fetch请求来捕获班级选择
+        const originalFetch = doc.defaultView.fetch;
+        doc.defaultView.fetch = function(...args) {
+          const url = args[0];
+          
+          // 监听获取学生列表的API调用，从中提取班级ID
+          if (typeof url === 'string' && url.includes('/api/classes/') && url.includes('/students')) {
+            const match = url.match(/\/api\/classes\/(\d+)\/students/);
+            if (match && match[1]) {
+              const classId = match[1];
+              console.log('检测到班级选择，班级ID:', classId);
+              localStorage.setItem('currentClassId', classId);
+            }
+          }
+          
+          return originalFetch.apply(this, args);
+        };
+
+        // 使用MutationObserver监听DOM变化，作为备用方案
+        const observer = new MutationObserver(function(mutations) {
+          // 查找班级选择器的值
+          const selectButtons = doc.querySelectorAll('[role="combobox"]');
+          
+          for (let button of selectButtons) {
+            const buttonText = button.textContent.trim();
+            
+            // 检查是否是班级选择器（不是"暂无可用班级"）
+            if (buttonText && !buttonText.includes('暂无') && !buttonText.includes('选择')) {
+              // 尝试从按钮附近找到班级信息
+              console.log('检测到班级选择:', buttonText);
+              
+              // 尝试通过文本匹配班级名称来获取ID
+              // 这需要先获取所有班级列表
+              tryMatchClassByName(buttonText);
+            }
+          }
+        });
+
+        observer.observe(doc.body, {
+          childList: true,
+          subtree: true,
+          characterData: true
+        });
+      }
+
+      // 尝试通过班级名称匹配班级ID
+      async function tryMatchClassByName(className) {
+        try {
+          const response = await fetch('/api/classes', {
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const classes = await response.json();
+            const matched = classes.find(c => {
+              const fullName = c.name + (c.grade ? ` (${c.grade})` : '');
+              return fullName === className || c.name === className;
+            });
+            
+            if (matched) {
+              console.log('匹配到班级:', matched.name, 'ID:', matched.id);
+              localStorage.setItem('currentClassId', matched.id.toString());
+            }
+          }
+        } catch (error) {
+          console.error('匹配班级失败:', error);
+        }
+      }
+
+      // 启动班级选择监听
+      setTimeout(monitorClassSelection, 1000);
+    })();
+  </script>
   <script>
     // Teacher Statistics Tracker
     (function() {

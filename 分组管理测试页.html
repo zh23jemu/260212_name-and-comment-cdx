@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>分组管理功能测试</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 48px;
+      max-width: 800px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      font-size: 32px;
+      color: #1f2937;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #6b7280;
+      margin-bottom: 40px;
+      font-size: 16px;
+    }
+
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      padding: 20px 32px;
+      border: none;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 2px solid #e5e7eb;
+    }
+
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+
+    .info-box {
+      background: #f0f9ff;
+      border: 2px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .info-title {
+      font-weight: 700;
+      color: #1e40af;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .info-content {
+      color: #1e40af;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .group-data {
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 24px;
+    }
+
+    .group-data h3 {
+      font-size: 16px;
+      color: #374151;
+      margin-bottom: 12px;
+    }
+
+    .group-item {
+      background: white;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .group-name {
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .group-count {
+      background: #e0e7ff;
+      color: #4f46e5;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 32px;
+      color: #9ca3af;
+    }
+
+    code {
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 分组管理功能测试</h1>
+    <p class="subtitle">测试课堂互动分组管理功能的集成</p>
+
+    <div class="info-box">
+      <div class="info-title">
+        💡 使用说明
+      </div>
+      <div class="info-content">
+        1. 点击"打开分组管理"按钮，将在新窗口中打开分组管理页面<br>
+        2. 在分组管理页面中拖拽学生进行分组或使用自动分组功能<br>
+        3. 点击"完成确认并保存"按钮保存分组数据<br>
+        4. 返回本页面，点击"查看当前分组"查看已保存的分组数据
+      </div>
+    </div>
+
+    <div class="button-group">
+      <button class="btn btn-primary" onclick="openGroupManagement()">
+        👥 打开分组管理
+      </button>
+      <button class="btn btn-secondary" onclick="loadAndDisplayGroups()">
+        📊 查看当前分组
+      </button>
+      <button class="btn btn-secondary" onclick="clearGroupData()">
+        🗑️ 清除分组数据
+      </button>
+    </div>
+
+    <div class="group-data" id="groupDataDisplay" style="display: none;">
+      <h3>📋 当前分组数据</h3>
+      <div id="groupDataContent"></div>
+    </div>
+
+    <div class="info-box" style="background: #fef3c7; border-color: #fde68a;">
+      <div class="info-title" style="color: #92400e;">
+        🔧 集成方法
+      </div>
+      <div class="info-content" style="color: #92400e;">
+        在课堂教学主界面中，只需在"分组设置"按钮添加点击事件：<br>
+        <code>onclick="openGroupManagement()"</code><br>
+        并引入脚本：<br>
+        <code>&lt;script src="./assets/static/group-management.js"&gt;&lt;/script&gt;</code>
+      </div>
+    </div>
+  </div>
+
+  <script src="./assets/static/group-management.js"></script>
+  <script>
+    // 加载并显示分组数据
+    async function loadAndDisplayGroups() {
+      const groupData = loadGroupData();
+      const display = document.getElementById('groupDataDisplay');
+      const content = document.getElementById('groupDataContent');
+
+      if (!groupData) {
+        content.innerHTML = '<div class="empty-state">暂无分组数据<br>请先打开分组管理页面进行分组</div>';
+        display.style.display = 'block';
+        return;
+      }
+
+      let html = '';
+      let totalAssigned = 0;
+      
+      for (let i = 1; i <= 4; i++) {
+        const groupKey = `group${i}`;
+        const students = groupData[groupKey] || [];
+        totalAssigned += students.length;
+        
+        html += `
+          <div class="group-item">
+            <span class="group-name">第 ${i} 组</span>
+            <span class="group-count">${students.length} 人</span>
+          </div>
+        `;
+        
+        // 显示学生名单（可选）
+        if (students.length > 0) {
+          const names = students.map(s => s.name).join('、');
+          html += `
+            <div style="padding: 8px 12px; margin-bottom: 8px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #6b7280;">
+              ${names}
+            </div>
+          `;
+        }
+      }
+
+      const unassigned = groupData.unassigned || [];
+      if (unassigned.length > 0) {
+        html += `
+          <div class="group-item">
+            <span class="group-name">未分配</span>
+            <span class="group-count" style="background: #fee2e2; color: #dc2626;">${unassigned.length} 人</span>
+          </div>
+        `;
+        
+        const names = unassigned.map(s => s.name).join('、');
+        html += `
+          <div style="padding: 8px 12px; margin-bottom: 8px; background: #fef2f2; border-radius: 6px; font-size: 13px; color: #dc2626;">
+            ${names}
+          </div>
+        `;
+      }
+
+      // 添加统计信息
+      html += `
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 14px;">
+          总计: ${totalAssigned + unassigned.length} 人 | 已分组: ${totalAssigned} 人 | 未分组: ${unassigned.length} 人
+        </div>
+      `;
+
+      content.innerHTML = html;
+      display.style.display = 'block';
+
+      console.log('完整分组数据:', groupData);
+    }
+
+    // 清除分组数据
+    function clearGroupData() {
+      if (confirm('确定要清除所有分组数据吗？')) {
+        localStorage.removeItem('classroomGroups');
+        document.getElementById('groupDataDisplay').style.display = 'none';
+        alert('分组数据已清除！');
+      }
+    }
+
+    // 监听分组数据更新
+    window.onGroupDataUpdated = function(data) {
+      console.log('检测到分组数据更新:', data);
+      loadAndDisplayGroups();
+    };
+  </script>
+</body>
+</html>
