@@ -3192,6 +3192,12 @@
             updateStarCountCard(scoreVal);
             // 更新最近评价学生卡片
             updateRecentEvalCard(student.name, scoreVal);
+            // 记录学生的当堂得分（用于小组最高分计算）
+            recordStudentSessionScore(student.id, scoreVal);
+            // 更新小组最高分
+            setTimeout(function() {
+              updateGroupHighScoreCardSession();
+            }, 300);
             setTimeout(closeModal, 900);
           } else {
             submitBtn.textContent = '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5';
@@ -3486,12 +3492,746 @@
   setTimeout(function () { initSubtitleDisplay(); }, 2500);
   setTimeout(function () { initSubtitleDisplay(); }, 4000);
 
+  // ─── 小组评分功能模块 ───────────────────────────────────────────
+
+  // 评价标签常量
+  var TAGS_POS = ['积极发言', '回答正确', '思路清晰', '认真听讲', '学习努力'];
+  var TAGS_NEG = ['需要加油', '注意力分散', '参与不够', '常类展示', '尚需练习'];
+
+  // 当堂小组得分状态（只统计本次课堂的评价）
+  var groupSessionState = {
+    studentScores: {}, // 学生ID -> 当堂得分
+    groupScores: {}    // 小组编号 -> 当堂总分
+  };
+
+  // 记录学生的当堂评价分数
+  function recordStudentSessionScore(studentId, score) {
+    if (!groupSessionState.studentScores[studentId]) {
+      groupSessionState.studentScores[studentId] = 0;
+    }
+    groupSessionState.studentScores[studentId] += score;
+    console.log('[group-score] Student', studentId, 'session score updated to:', groupSessionState.studentScores[studentId]);
+  }
+
+  // 更新小组最高分卡片（只统计当堂数据）
+  function updateGroupHighScoreCardSession() {
+    try {
+      // 获取当前班级ID
+      var currentClassId = localStorage.getItem('currentClassId');
+      if (!currentClassId) {
+        console.log('[group-score] No class selected');
+        return;
+      }
+
+      // 加载分组数据
+      loadGroupDataInternal().then(function(groupData) {
+        if (!groupData) {
+          console.log('[group-score] No group data found');
+          return;
+        }
+
+        // 使用当堂评价数据计算小组得分
+        var groupScores = {};
+        for (var groupNum = 1; groupNum <= 8; groupNum++) {
+          var groupKey = 'group' + groupNum;
+          var members = groupData[groupKey] || [];
+          var totalScore = 0;
+          
+          console.log('[group-score] Calculating session score for group', groupNum, 'with', members.length, 'members');
+          
+          for (var j = 0; j < members.length; j++) {
+            var member = members[j];
+            var memberScore = groupSessionState.studentScores[member.id] || 0;
+            console.log('[group-score]   Member', member.name, '(ID:', member.id, ') session score:', memberScore);
+            totalScore += memberScore;
+          }
+          
+          console.log('[group-score] Group', groupNum, 'session total score:', totalScore);
+          
+          if (members.length > 0) {
+            groupScores[groupNum] = {
+              score: totalScore,
+              memberCount: members.length,
+              avgScore: members.length > 0 ? Math.round(totalScore / members.length * 10) / 10 : 0
+            };
+            groupSessionState.groupScores[groupNum] = totalScore;
+          }
+        }
+
+        // 找出当堂得分最高的小组
+        var maxScore = 0;
+        var topGroup = null;
+        for (var gNum in groupScores) {
+          if (groupScores[gNum].score > maxScore) {
+            maxScore = groupScores[gNum].score;
+            topGroup = parseInt(gNum, 10);
+          }
+        }
+
+        console.log('[group-score] Session group scores:', groupScores);
+        console.log('[group-score] Top group (session):', topGroup, 'with score:', maxScore);
+
+        // 更新UI显示
+        if (topGroup && maxScore > 0) {
+          updateGroupScoreDisplay(topGroup, groupScores[topGroup]);
+        } else {
+          console.log('[group-score] No group has scores in this session yet');
+          // 显示默认状态
+          updateGroupScoreDisplay(1, { score: 0, memberCount: 0, avgScore: 0 });
+        }
+      });
+    } catch (error) {
+      console.error('[group-score] Error updating group high score:', error);
+    }
+  }
+
+  // 显示小组评分弹窗
+  function showGroupEvaluationModal(doc, groupNumber, groupMembers, cls) {
+    if (!doc) doc = document;
+    
+    // 移除已存在的弹窗
+    var existing = doc.getElementById('bridge-group-eval-modal');
+    if (existing) existing.remove();
+
+    var overlay = doc.createElement('div');
+    overlay.id = 'bridge-group-eval-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);'
+      + 'display:flex;align-items:center;justify-content:center;z-index:999999;animation:bridgeFadeIn .25s ease;';
+
+    // 添加样式（如果还没有）
+    if (!doc.getElementById('bridge-group-eval-style')) {
+      var styleEl = doc.createElement('style');
+      styleEl.id = 'bridge-group-eval-style';
+      styleEl.textContent = [
+        '@keyframes bridgeFadeIn{from{opacity:0}to{opacity:1}}',
+        '#bridge-group-eval-modal .bcard{background:#fff;border-radius:1.5rem;padding:2rem;max-width:600px;width:90%;',
+        'box-shadow:0 25px 50px -12px rgba(0,0,0,.25);animation:bridgeSlideUp .3s ease;}',
+        '@keyframes bridgeSlideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}',
+        '#bridge-group-eval-modal h2{margin:0 0 .3rem;font-size:1.5rem;font-weight:800;color:#1e1b4b;text-align:center;}',
+        '#bridge-group-eval-modal .bsub{text-align:center;color:#6366f1;font-weight:600;font-size:.9rem;margin-bottom:1.2rem;}',
+        '#bridge-group-eval-modal .group-info{background:#f8fafc;border-radius:1rem;padding:1rem;margin-bottom:1.2rem;border:2px dashed #cbd5e1;}',
+        '#bridge-group-eval-modal .group-title{font-size:1.1rem;font-weight:700;color:#334155;margin-bottom:.5rem;text-align:center;}',
+        '#bridge-group-eval-modal .group-members{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;}',
+        '#bridge-group-eval-modal .member-tag{background:#fff;border:1.5px solid #e2e8f0;border-radius:.5rem;padding:.3rem .7rem;',
+        'font-size:.8rem;color:#64748b;font-weight:600;}',
+        '#bridge-group-eval-modal .bstars{display:flex;justify-content:center;gap:.6rem;margin:.2rem 0 1.2rem;}',
+        '#bridge-group-eval-modal .bstar{font-size:2.8rem;cursor:pointer;transition:transform .18s,color .18s,text-shadow .18s;color:#d1d5db;user-select:none;line-height:1;}',
+        '#bridge-group-eval-modal .bstar:hover{color:#fbbf24;transform:scale(1.2);text-shadow:0 0 12px rgba(251,191,36,.6);}',
+        '#bridge-group-eval-modal .bstar.on{color:#f59e0b;transform:scale(1.12);text-shadow:0 0 16px rgba(245,158,11,.55);}',
+        '#bridge-group-eval-modal .bscore{text-align:center;font-size:.9rem;color:#6366f1;font-weight:700;margin-bottom:.9rem;min-height:1.1em;}',
+        '#bridge-group-eval-modal .btags{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1rem;}',
+        '#bridge-group-eval-modal .btag{padding:.3rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;border:1.5px solid;transition:all .15s;}',
+        '#bridge-group-eval-modal .btag-pos{border-color:#6366f1;color:#6366f1;background:#eef2ff;}',
+        '#bridge-group-eval-modal .btag-pos.sel{background:#6366f1;color:#fff;}',
+        '#bridge-group-eval-modal .btag-neg{border-color:#f43f5e;color:#f43f5e;background:#fff1f2;}',
+        '#bridge-group-eval-modal .btag-neg.sel{background:#f43f5e;color:#fff;}',
+        '#bridge-group-eval-modal .bcomment{width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:.75rem;',
+        'padding:.55rem .8rem;font-size:.85rem;color:#334155;outline:none;resize:none;margin-bottom:1.1rem;font-family:inherit;}',
+        '#bridge-group-eval-modal .bcomment:focus{border-color:#6366f1;}',
+        '#bridge-group-eval-modal .bbtns{display:flex;gap:.75rem;}',
+        '#bridge-group-eval-modal .bbtn{flex:1;padding:.75rem;border-radius:.85rem;font-size:.95rem;font-weight:700;cursor:pointer;border:none;transition:all .15s;}',
+        '#bridge-group-eval-modal .bbtn-submit{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.35);}',
+        '#bridge-group-eval-modal .bbtn-submit:hover{filter:brightness(1.08);}',
+        '#bridge-group-eval-modal .bbtn-skip{background:#f1f5f9;color:#64748b;}',
+        '#bridge-group-eval-modal .bbtn-skip:hover{background:#e2e8f0;}',
+        '#bridge-group-eval-modal .blabel{font-size:.78rem;font-weight:700;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.35rem;}'
+      ].join('');
+      doc.head.appendChild(styleEl);
+    }
+
+    var scoreLabels = ['', '需要加油 ★', '表现一般 ★★', '表现良好 ★★★', '非常优秀 ★★★★', '满分表现 ★★★★★'];
+    var selectedScore = 0;
+    var selectedTags = [];
+
+    // 构建成员列表HTML
+    var membersHtml = groupMembers.map(function(m) {
+      return '<span class="member-tag">' + (m.name || '未知') + '</span>';
+    }).join('');
+
+    overlay.innerHTML = '<div class="bcard">'
+      + '<h2>👥 小组互动评价</h2>'
+      + '<div class="bsub">为第 ' + groupNumber + ' 组打分（共 ' + groupMembers.length + ' 名成员）</div>'
+      + '<div class="group-info">'
+      + '<div class="group-title">第 ' + groupNumber + ' 组成员</div>'
+      + '<div class="group-members">' + membersHtml + '</div>'
+      + '</div>'
+      + '<div class="bstars" id="bgroup-eval-stars">'
+      + '★★★★★'.split('').map(function (s, i) {
+        return '<span class="bstar" data-v="' + (i + 1) + '">' + s + '</span>';
+      }).join('')
+      + '</div>'
+      + '<div class="bscore" id="bgroup-eval-score">请点击星星评分</div>'
+      + '<div class="blabel">评语标签</div>'
+      + '<div class="btags" id="bgroup-eval-tags">'
+      + TAGS_POS.map(function (t) { return '<span class="btag btag-pos" data-tag="' + t + '">' + t + '</span>'; }).join('')
+      + TAGS_NEG.map(function (t) { return '<span class="btag btag-neg" data-tag="' + t + '">' + t + '</span>'; }).join('')
+      + '</div>'
+      + '<div class="blabel">备注（可选）</div>'
+      + '<textarea class="bcomment" id="bgroup-eval-comment" rows="2" placeholder="添加备注..."></textarea>'
+      + '<div class="bbtns">'
+      + '<button class="bbtn bbtn-skip" id="bgroup-eval-skip">取消评价</button>'
+      + '<button class="bbtn bbtn-submit" id="bgroup-eval-submit">确认评价</button>'
+      + '</div>'
+      + '</div>';
+
+    doc.body.appendChild(overlay);
+
+    // 星星互动
+    var stars = overlay.querySelectorAll('.bstar');
+    var scoreEl = doc.getElementById('bgroup-eval-score');
+    function highlightStars(n) {
+      stars.forEach(function (s) {
+        var v = parseInt(s.getAttribute('data-v'), 10);
+        if (v <= n) s.classList.add('on'); else s.classList.remove('on');
+      });
+    }
+    stars.forEach(function (s) {
+      s.addEventListener('mouseover', function () { highlightStars(parseInt(s.getAttribute('data-v'), 10)); });
+      s.addEventListener('mouseleave', function () { highlightStars(selectedScore); });
+      s.addEventListener('click', function (e) {
+        e.stopPropagation();
+        selectedScore = parseInt(s.getAttribute('data-v'), 10);
+        highlightStars(selectedScore);
+        if (scoreEl) scoreEl.textContent = scoreLabels[selectedScore] || '';
+      });
+    });
+
+    // 标签互动
+    var tagEls = overlay.querySelectorAll('.btag');
+    tagEls.forEach(function (t) {
+      t.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var tag = t.getAttribute('data-tag');
+        var idx = selectedTags.indexOf(tag);
+        if (idx >= 0) { selectedTags.splice(idx, 1); t.classList.remove('sel'); }
+        else { selectedTags.push(tag); t.classList.add('sel'); }
+      });
+    });
+
+    function closeModal() {
+      overlay.style.animation = 'bridgeFadeIn .2s ease reverse';
+      setTimeout(function () { if (overlay.parentNode) overlay.remove(); }, 200);
+    }
+
+    // 点击遮罩层关闭
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    // 取消评价
+    var skipBtn = doc.getElementById('bgroup-eval-skip');
+    if (skipBtn) skipBtn.addEventListener('click', function (e) { e.stopPropagation(); closeModal(); });
+
+    // 确认评价
+    var submitBtn = doc.getElementById('bgroup-eval-submit');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (!selectedScore) {
+          if (scoreEl) { 
+            scoreEl.textContent = '请先点击星星评分 ⚠️'; 
+            scoreEl.style.color = '#f43f5e'; 
+          }
+          return;
+        }
+        
+        var comment = (doc.getElementById('bgroup-eval-comment') || {}).value || '';
+        var clsId = (cls && cls.id) ? cls.id : (window.__selectedClass__ || {}).id;
+        if (!clsId) { 
+          console.warn('[group-eval] No classId'); 
+          closeModal(); 
+          return; 
+        }
+        
+        submitBtn.textContent = '提交中...';
+        submitBtn.disabled = true;
+        
+        // 为小组中的每个成员提交评价
+        submitGroupEvaluation(clsId, groupMembers, selectedScore, selectedTags.slice(), comment).then(function (result) {
+          if (result.success) {
+            submitBtn.textContent = '✓ 评价成功';
+            submitBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+            
+            // 记录每个成员的当堂得分
+            for (var i = 0; i < groupMembers.length; i++) {
+              recordStudentSessionScore(groupMembers[i].id, selectedScore);
+            }
+            
+            // 更新当堂得星总计卡片
+            var totalStars = selectedScore * groupMembers.length;
+            updateStarCountCard(totalStars);
+            
+            // 更新最近评价学生卡片（显示小组信息）
+            updateRecentEvalCard('第' + groupNumber + '组 (' + groupMembers.length + '人)', selectedScore);
+            
+            // 更新小组最高分卡片（使用当堂数据）
+            setTimeout(function() {
+              updateGroupHighScoreCardSession();
+            }, 500);
+            
+            setTimeout(closeModal, 900);
+          } else {
+            submitBtn.textContent = '提交失败，请重试';
+            submitBtn.disabled = false;
+            if (result.error) {
+              alert('评价失败: ' + result.error);
+            }
+          }
+        });
+      });
+    }
+  }
+
+  // 提交小组评价（批量提交）
+  async function submitGroupEvaluation(classId, members, score, tags, comment) {
+    try {
+      var successCount = 0;
+      var failCount = 0;
+      
+      // 为每个成员提交评价
+      for (var i = 0; i < members.length; i++) {
+        var member = members[i];
+        var res = await fetch(API_BASE + '/api/evaluations', {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, getAuthHeader()),
+          body: JSON.stringify({ 
+            classId: classId, 
+            studentId: member.id, 
+            score: score, 
+            tags: tags, 
+            comment: comment || '' 
+          })
+        });
+        
+        if (res.ok) {
+          successCount++;
+        } else {
+          failCount++;
+          console.error('[group-eval] Failed for student:', member.name);
+        }
+      }
+      
+      console.log('[group-eval] Group evaluation completed: success=' + successCount + ' fail=' + failCount);
+      
+      if (successCount > 0) {
+        return { success: true, successCount: successCount, failCount: failCount };
+      } else {
+        return { success: false, error: '所有评价都失败了' };
+      }
+    } catch (e) {
+      console.error('[group-eval] Network error:', e);
+      return { success: false, error: '网络错误' };
+    }
+  }
+
+  // 更新小组最高分卡片
+  async function updateGroupHighScoreCard() {
+    try {
+      // 获取当前班级ID
+      var currentClassId = localStorage.getItem('currentClassId');
+      if (!currentClassId) {
+        console.log('[group-score] No class selected');
+        return;
+      }
+
+      // 加载分组数据
+      var groupData = await loadGroupDataInternal();
+      if (!groupData) {
+        console.log('[group-score] No group data found');
+        return;
+      }
+
+      // 获取班级所有学生的评价统计
+      var statsResponse = await fetch(API_BASE + '/api/classes/' + currentClassId + '/students/evaluation-stats', {
+        credentials: 'include'
+      });
+      
+      if (!statsResponse.ok) {
+        console.warn('[group-score] Failed to fetch evaluation stats');
+        return;
+      }
+
+      var stats = await statsResponse.json();
+      console.log('[group-score] Loaded evaluation stats for', stats.length, 'students');
+      
+      // 构建学生ID到总分的映射
+      var studentScores = {};
+      for (var i = 0; i < stats.length; i++) {
+        studentScores[stats[i].studentId] = stats[i].totalStars || 0;
+        console.log('[group-score] Student', stats[i].studentId, '(', stats[i].name, ') has', stats[i].totalStars, 'stars');
+      }
+
+      // 计算每个小组的总分
+      var groupScores = {};
+      for (var groupNum = 1; groupNum <= 8; groupNum++) {
+        var groupKey = 'group' + groupNum;
+        var members = groupData[groupKey] || [];
+        var totalScore = 0;
+        
+        console.log('[group-score] Calculating score for group', groupNum, 'with', members.length, 'members');
+        
+        for (var j = 0; j < members.length; j++) {
+          var member = members[j];
+          var memberScore = studentScores[member.id] || 0;
+          console.log('[group-score]   Member', member.name, '(ID:', member.id, ') score:', memberScore);
+          totalScore += memberScore;
+        }
+        
+        console.log('[group-score] Group', groupNum, 'total score:', totalScore);
+        
+        if (members.length > 0) {
+          groupScores[groupNum] = {
+            score: totalScore,
+            memberCount: members.length,
+            avgScore: members.length > 0 ? Math.round(totalScore / members.length * 10) / 10 : 0
+          };
+        }
+      }
+
+      // 找出最高分的小组
+      var maxScore = 0;
+      var topGroup = null;
+      for (var gNum in groupScores) {
+        if (groupScores[gNum].score > maxScore) {
+          maxScore = groupScores[gNum].score;
+          topGroup = parseInt(gNum, 10);
+        }
+      }
+
+      console.log('[group-score] Group scores:', groupScores);
+      console.log('[group-score] Top group:', topGroup, 'with score:', maxScore);
+
+      // 更新UI显示
+      if (topGroup && maxScore > 0) {
+        updateGroupScoreDisplay(topGroup, groupScores[topGroup]);
+      } else {
+        console.log('[group-score] No group has scores yet');
+      }
+    } catch (error) {
+      console.error('[group-score] Error updating group high score:', error);
+    }
+  }
+
+  // 更新小组最高分的UI显示
+  function updateGroupScoreDisplay(groupNum, scoreData) {
+    var docs = [document];
+    try {
+      var iframe = document.getElementById('dynamicIframe');
+      if (iframe && iframe.contentDocument) docs.push(iframe.contentDocument);
+    } catch (_) { }
+
+    for (var di = 0; di < docs.length; di++) {
+      var doc = docs[di];
+      if (!doc) continue;
+
+      // 查找"小组最高分"卡片
+      var allH3 = doc.querySelectorAll('h3');
+      console.log('[group-score] Searching in', allH3.length, 'h3 elements');
+      
+      for (var i = 0; i < allH3.length; i++) {
+        var h3 = allH3[i];
+        if (h3.textContent.indexOf('小组最高分') >= 0) {
+          console.log('[group-score] Found "小组最高分" card');
+          
+          // 找到卡片，更新内容
+          var card = h3.closest('[class*="card"]') || h3.closest('div[class*="bg-"]');
+          if (card) {
+            console.log('[group-score] Found card element');
+            
+            // 查找所有可能包含数字的元素
+            var allEls = card.querySelectorAll('div, span, p');
+            console.log('[group-score] Found', allEls.length, 'elements in card');
+            
+            for (var j = 0; j < allEls.length; j++) {
+              var el = allEls[j];
+              var text = el.textContent.trim();
+              var className = el.className || '';
+              
+              console.log('[group-score] Element', j, '- text:', text, '| class:', className);
+              
+              // 更新小组编号
+              if (text.match(/^第\s*\d+\s*组$/) || text === '暂无' || text === '-' || text === '第1组') {
+                el.textContent = '第 ' + groupNum + ' 组';
+                console.log('[group-score] Updated group number to:', groupNum);
+              }
+              
+              // 更新分数 - 匹配 "X 分 · 表现优异" 格式
+              if (text.match(/^\d+\s*分\s*·/)) {
+                el.textContent = scoreData.score + ' 分 · 表现优异';
+                console.log('[group-score] Updated score text to:', scoreData.score + ' 分 · 表现优异');
+              }
+              
+              // 更新分数 - 查找大号文字的纯数字
+              else if (text.match(/^\d+$/) && (className.indexOf('text-4xl') >= 0 || className.indexOf('text-5xl') >= 0 || className.indexOf('text-6xl') >= 0 || className.indexOf('text-3xl') >= 0)) {
+                el.textContent = String(scoreData.score);
+                console.log('[group-score] Updated score to:', scoreData.score, 'for element with class:', className);
+              }
+            }
+          } else {
+            console.warn('[group-score] Card element not found');
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // 从数据库加载分组数据（内部实现，不依赖外部脚本）
+  async function loadGroupDataInternal() {
+    try {
+      var currentClassId = localStorage.getItem('currentClassId');
+      if (!currentClassId) {
+        console.warn('[group-eval] No class ID in localStorage');
+        return null;
+      }
+
+      var namespace = 'class_' + currentClassId + '_groups';
+      var response = await fetch(API_BASE + '/api/kv/snapshot?namespace=' + encodeURIComponent(namespace), {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        console.warn('[group-eval] Failed to fetch group data:', response.status);
+        return null;
+      }
+
+      var result = await response.json();
+      var saved = result.items && result.items.groupData;
+      
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[group-eval] Error loading group data:', error);
+      return null;
+    }
+  }
+
+  // 绑定小组评分按钮的点击事件
+  function bindGroupEvaluationHandler() {
+    var docs = [document];
+    try {
+      var iframe = document.getElementById('dynamicIframe');
+      if (iframe && iframe.contentDocument) docs.push(iframe.contentDocument);
+    } catch (_) { }
+
+    console.log('[group-eval] Binding group evaluation handler, checking', docs.length, 'documents');
+
+    for (var di = 0; di < docs.length; di++) {
+      var doc = docs[di];
+      if (!doc) continue;
+
+      var buttons = doc.querySelectorAll('button');
+      console.log('[group-eval] Found', buttons.length, 'buttons in document', di);
+      
+      for (var bi = 0; bi < buttons.length; bi++) {
+        var btn = buttons[bi];
+        var txt = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+        var originalText = btn.textContent || btn.innerText || '';
+        
+        // 查找"小组 评分"或"小组 互动"按钮 - 使用更宽松的匹配
+        if ((txt.indexOf('小组') >= 0 && txt.indexOf('互动') >= 0) || 
+            (txt.indexOf('小组') >= 0 && txt.indexOf('评价') >= 0) ||
+            (txt.indexOf('小组') >= 0 && txt.indexOf('评分') >= 0) ||
+            txt === '小组互动' || txt === '小组评价' || txt === '小组评分') {
+          console.log('[group-eval] Found group evaluation button:', originalText.trim(), '| processed:', txt);
+          
+          // 移除旧的事件监听器
+          var newBtn = btn.cloneNode(true);
+          btn.parentNode.replaceChild(newBtn, btn);
+          
+          newBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('[group-eval] Group evaluation button clicked');
+            
+            // 获取当前班级 - 优先从 localStorage 获取
+            var currentClassId = localStorage.getItem('currentClassId');
+            console.log('[group-eval] Current class ID from localStorage:', currentClassId);
+            
+            var cls = window.__selectedClass__ || 
+              (function () {
+                try { 
+                  if (window.parent && window.parent !== window) 
+                    return window.parent.__selectedClass__; 
+                } catch (_) { }
+                return null;
+              }());
+            
+            // 如果没有 cls 但有 classId，尝试从 API 获取班级信息
+            if ((!cls || !cls.id) && currentClassId) {
+              console.log('[group-eval] Fetching class info from API...');
+              try {
+                var response = await fetch(API_BASE + '/api/classes', {
+                  credentials: 'include'
+                });
+                if (response.ok) {
+                  var classes = await response.json();
+                  cls = classes.find(function(c) { return c.id === parseInt(currentClassId, 10); });
+                  console.log('[group-eval] Found class from API:', cls);
+                }
+              } catch (err) {
+                console.error('[group-eval] Failed to fetch class info:', err);
+              }
+            }
+            
+            if (!cls || !cls.id) {
+              console.warn('[group-eval] No class selected');
+              alert('请先选择班级');
+              return;
+            }
+            
+            console.log('[group-eval] Current class:', cls);
+            
+            // 加载分组数据
+            console.log('[group-eval] Loading group data...');
+            
+            // 优先使用内部实现，如果不存在则尝试外部函数
+            var groupData = await loadGroupDataInternal();
+            
+            console.log('[group-eval] Group data loaded:', groupData);
+            
+            if (!groupData) {
+              alert('未找到分组数据，请先在分组管理页面设置分组');
+              return;
+            }
+            
+            // 显示小组选择弹窗
+            showGroupSelectionModal(doc, groupData, cls);
+          });
+          
+          console.log('[group-eval] Event listener attached to button');
+          break;
+        }
+      }
+    }
+  }
+
+  // 显示小组选择弹窗
+  function showGroupSelectionModal(doc, groupData, cls) {
+    if (!doc) doc = document;
+    
+    // 移除已存在的弹窗
+    var existing = doc.getElementById('bridge-group-select-modal');
+    if (existing) existing.remove();
+
+    var overlay = doc.createElement('div');
+    overlay.id = 'bridge-group-select-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);'
+      + 'display:flex;align-items:center;justify-content:center;z-index:999999;animation:bridgeFadeIn .25s ease;';
+
+    // 添加样式
+    if (!doc.getElementById('bridge-group-select-style')) {
+      var styleEl = doc.createElement('style');
+      styleEl.id = 'bridge-group-select-style';
+      styleEl.textContent = [
+        '#bridge-group-select-modal .bcard{background:#fff;border-radius:1.5rem;padding:2rem;max-width:900px;width:90%;',
+        'box-shadow:0 25px 50px -12px rgba(0,0,0,.25);animation:bridgeSlideUp .3s ease;max-height:80vh;overflow-y:auto;}',
+        '#bridge-group-select-modal h2{margin:0 0 .5rem;font-size:1.5rem;font-weight:800;color:#1e1b4b;text-align:center;}',
+        '#bridge-group-select-modal .subtitle{text-align:center;color:#6366f1;font-weight:600;font-size:.9rem;margin-bottom:1.5rem;}',
+        '#bridge-group-select-modal .groups-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem;}',
+        '#bridge-group-select-modal .group-card{background:#f8fafc;border:2px solid #e2e8f0;border-radius:1rem;padding:1rem;cursor:pointer;',
+        'transition:all .2s;text-align:center;}',
+        '#bridge-group-select-modal .group-card:hover{border-color:#6366f1;background:#eef2ff;transform:translateY(-2px);box-shadow:0 4px 12px rgba(99,102,241,.2);}',
+        '#bridge-group-select-modal .group-card.empty{opacity:.5;cursor:not-allowed;}',
+        '#bridge-group-select-modal .group-card.empty:hover{border-color:#e2e8f0;background:#f8fafc;transform:none;box-shadow:none;}',
+        '#bridge-group-select-modal .group-icon{font-size:2rem;margin-bottom:.5rem;}',
+        '#bridge-group-select-modal .group-name{font-size:1.1rem;font-weight:700;color:#334155;margin-bottom:.3rem;}',
+        '#bridge-group-select-modal .group-count{font-size:.85rem;color:#64748b;}',
+        '#bridge-group-select-modal .close-btn{width:100%;padding:.75rem;border-radius:.85rem;font-size:.95rem;font-weight:700;',
+        'cursor:pointer;border:none;background:#f1f5f9;color:#64748b;transition:all .15s;}',
+        '#bridge-group-select-modal .close-btn:hover{background:#e2e8f0;}'
+      ].join('');
+      doc.head.appendChild(styleEl);
+    }
+
+    // 构建小组卡片
+    console.log('[group-eval] Building group cards with data:', groupData);
+    var groupsHtml = '';
+    var groupColors = ['#3b82f6', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6', '#a855f7', '#06b6d4', '#f43f5e'];
+    
+    for (var i = 1; i <= 8; i++) {
+      var groupKey = 'group' + i;
+      var members = groupData[groupKey] || [];
+      console.log('[group-eval] Group ' + i + ' (' + groupKey + '):', members);
+      var isEmpty = members.length === 0;
+      var color = groupColors[i - 1];
+      
+      groupsHtml += '<div class="group-card' + (isEmpty ? ' empty' : '') + '" data-group="' + i + '" '
+        + 'style="' + (isEmpty ? '' : 'border-color:' + color + ';') + '">'
+        + '<div class="group-icon">👥</div>'
+        + '<div class="group-name" style="color:' + color + ';">第 ' + i + ' 组</div>'
+        + '<div class="group-count">' + members.length + ' 名成员</div>'
+        + '</div>';
+    }
+
+    overlay.innerHTML = '<div class="bcard">'
+      + '<h2>👥 小组互动评价</h2>'
+      + '<div class="subtitle">请选择要评价的小组</div>'
+      + '<div class="groups-grid">' + groupsHtml + '</div>'
+      + '<button class="close-btn" id="group-select-close">取消</button>'
+      + '</div>';
+
+    doc.body.appendChild(overlay);
+
+    function closeModal() {
+      overlay.style.animation = 'bridgeFadeIn .2s ease reverse';
+      setTimeout(function () { if (overlay.parentNode) overlay.remove(); }, 200);
+    }
+
+    // 点击遮罩层关闭
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    // 关闭按钮
+    var closeBtn = doc.getElementById('group-select-close');
+    if (closeBtn) closeBtn.addEventListener('click', function (e) { e.stopPropagation(); closeModal(); });
+
+    // 小组卡片点击事件
+    var groupCards = overlay.querySelectorAll('.group-card:not(.empty)');
+    console.log('[group-eval] Binding click events to', groupCards.length, 'group cards');
+    groupCards.forEach(function(card) {
+      card.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var groupNum = parseInt(card.getAttribute('data-group'), 10);
+        var groupKey = 'group' + groupNum;
+        var members = groupData[groupKey] || [];
+        
+        console.log('[group-eval] Group card clicked:', groupNum, 'members:', members);
+        
+        if (members.length > 0) {
+          console.log('[group-eval] Closing selection modal and showing evaluation modal...');
+          closeModal();
+          setTimeout(function() {
+            showGroupEvaluationModal(doc, groupNum, members, cls);
+          }, 250);
+        }
+      });
+    });
+  }
+
+  // 初始化小组评分功能
+  setTimeout(function () { bindGroupEvaluationHandler(); }, 1500);
+  setTimeout(function () { bindGroupEvaluationHandler(); }, 3000);
+  setTimeout(function () { bindGroupEvaluationHandler(); }, 4500);
+  
+  // 初始化小组最高分显示（当堂数据，初始为0）
+  setTimeout(function () { updateGroupHighScoreCardSession(); }, 2000);
+
+  // ─── 小组评分功能模块 END ───────────────────────────────────────────
+
   window.sqliteBridge = {
     namespace: NAMESPACE,
     apiBase: API_BASE,
     sync: mirrorWholeStorage,
     overrideClassPage: runClassPageOverride,
     overrideDashboardPage: runDashboardOverride,
-    overrideTeacherPage: runTeacherPageOverride
+    overrideTeacherPage: runTeacherPageOverride,
+    showGroupEvaluationModal: showGroupEvaluationModal,
+    bindGroupEvaluationHandler: bindGroupEvaluationHandler
   };
 })();

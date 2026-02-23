@@ -336,6 +336,27 @@ export default async function dataRoutes(fastify) {
     return rows;
   });
 
+  // 获取班级学生的评价统计（用于小组积分计算）
+  fastify.get('/api/classes/:id/students/evaluation-stats', async (request, reply) => {
+    const classId = Number(request.params.id);
+    if (!Number.isInteger(classId) || classId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_CLASS_ID' });
+    }
+
+    const stats = db.prepare(
+      `SELECT s.id as studentId, s.name, 
+              IFNULL(SUM(e.score), 0) as totalStars,
+              COUNT(e.id) as evaluationCount
+       FROM students s
+       LEFT JOIN evaluations e ON e.student_id = s.id
+       WHERE s.class_id = ?
+       GROUP BY s.id
+       ORDER BY s.id`
+    ).all(classId);
+
+    return stats;
+  });
+
   fastify.delete('/api/students/:id', async (request, reply) => {
     const studentId = Number(request.params.id);
     if (!Number.isInteger(studentId) || studentId <= 0) {
