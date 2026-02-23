@@ -575,13 +575,32 @@
       }, 5000);
     }
 
-    // 从localStorage加载已保存的分组数据
-    function loadSavedGroups() {
+    // 从数据库加载已保存的分组数据
+    async function loadSavedGroups() {
       try {
-        const saved = localStorage.getItem('classroomGroups');
+        const currentClassId = localStorage.getItem('currentClassId');
+        if (!currentClassId) {
+          console.warn('未选择班级，无法加载分组数据');
+          return false;
+        }
+
+        // 从数据库获取分组数据
+        const namespace = `class_${currentClassId}_groups`;
+        const response = await fetch(`/api/kv/snapshot?namespace=${encodeURIComponent(namespace)}`, {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          console.warn('获取分组数据失败:', response.status);
+          return false;
+        }
+
+        const result = await response.json();
+        const saved = result.items?.groupData;
+        
         if (saved) {
           const data = JSON.parse(saved);
-          console.log('加载已保存的分组数据:', data);
+          console.log('从数据库加载已保存的分组数据:', data);
           
           // 恢复分组数据
           groups[1] = data.group1 || [];
@@ -613,7 +632,7 @@
       }
 
       // 尝试加载已保存的分组
-      const hasSavedGroups = loadSavedGroups();
+      const hasSavedGroups = await loadSavedGroups();
       
       if (!hasSavedGroups) {
         // 如果没有保存的分组，将所有学生放入待分配池
@@ -875,24 +894,58 @@
       document.getElementById('unassigned-count').textContent = groups.unassigned.length;
     }
 
-    // 保存分组
-    function saveGroups() {
-      const groupData = {
-        group1: groups[1],
-        group2: groups[2],
-        group3: groups[3],
-        group4: groups[4],
-        unassigned: groups.unassigned
-      };
+    // 保存分组到数据库
+    async function saveGroups() {
+      try {
+        const currentClassId = localStorage.getItem('currentClassId');
+        if (!currentClassId) {
+          alert('未选择班级，无法保存分组数据');
+          return;
+        }
 
-      // 保存到 localStorage
-      localStorage.setItem('classroomGroups', JSON.stringify(groupData));
-      
-      alert('分组已保存成功！');
-      console.log('保存的分组数据:', groupData);
-      
-      // 可以在这里添加关闭窗口或返回上一页的逻辑
-      // window.close();
+        const groupData = {
+          group1: groups[1],
+          group2: groups[2],
+          group3: groups[3],
+          group4: groups[4],
+          unassigned: groups.unassigned,
+          savedAt: new Date().toISOString(),
+          className: currentClassName
+        };
+
+        // 保存到数据库
+        const namespace = `class_${currentClassId}_groups`;
+        const response = await fetch('/api/kv/upsert', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            namespace: namespace,
+            key: 'groupData',
+            value: JSON.stringify(groupData)
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`保存失败: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.ok) {
+          // 同时保存到 localStorage 作为备份（用于跨窗口通信）
+          localStorage.setItem('classroomGroups', JSON.stringify(groupData));
+          
+          alert('分组已保存成功！');
+          console.log('保存的分组数据:', groupData);
+        } else {
+          throw new Error('保存失败');
+        }
+      } catch (error) {
+        console.error('保存分组数据失败:', error);
+        alert('保存分组数据失败，请重试');
+      }
     }
 
     // 页面加载时初始化

@@ -16,10 +16,38 @@
     );
   };
 
-  // 从localStorage加载分组数据
-  window.loadGroupData = function() {
-    const data = localStorage.getItem('classroomGroups');
-    return data ? JSON.parse(data) : null;
+  // 从数据库加载分组数据
+  window.loadGroupData = async function() {
+    try {
+      const currentClassId = localStorage.getItem('currentClassId');
+      if (!currentClassId) {
+        console.warn('未选择班级，无法加载分组数据');
+        return null;
+      }
+
+      // 从数据库获取分组数据
+      const namespace = `class_${currentClassId}_groups`;
+      const response = await fetch(`/api/kv/snapshot?namespace=${encodeURIComponent(namespace)}`, {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        console.warn('获取分组数据失败:', response.status);
+        return null;
+      }
+
+      const result = await response.json();
+      const saved = result.items?.groupData;
+      
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('加载分组数据失败:', error);
+      return null;
+    }
   };
 
   // 监听分组数据更新
