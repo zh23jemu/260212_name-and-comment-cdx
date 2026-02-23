@@ -2984,30 +2984,55 @@
   function updateStarCountCard(starsToAdd) {
     randomCallState.sessionStars += starsToAdd;
     var total = randomCallState.sessionStars;
+    
+    console.log('[eval] Updating star count card, adding:', starsToAdd, 'new total:', total);
+    
+    // 保存到 sessionStorage，以便页面切换后恢复
+    try {
+      sessionStorage.setItem('sessionStars', String(total));
+      console.log('[eval] Saved to sessionStorage:', total);
+    } catch (_) { }
+    
     var docs = [document];
     try {
       var ifrEl = document.getElementById('dynamicIframe');
-      if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+      if (ifrEl && ifrEl.contentDocument) {
+        docs.push(ifrEl.contentDocument);
+        console.log('[eval] Added iframe document to search');
+      }
     } catch (_) { }
     try {
       if (window.parent && window.parent !== window) {
         var pIfr = window.parent.document.getElementById('dynamicIframe');
-        if (pIfr && pIfr.contentDocument) docs.push(pIfr.contentDocument);
+        if (pIfr && pIfr.contentDocument) {
+          docs.push(pIfr.contentDocument);
+          console.log('[eval] Added parent iframe document to search');
+        }
       }
     } catch (_) { }
+    
+    console.log('[eval] Searching in', docs.length, 'documents for purple card');
+    
     for (var i = 0; i < docs.length; i++) {
       var d = docs[i];
       if (!d) continue;
+      console.log('[eval] Searching document', i);
       var purpleCard = d.querySelector('.bg-vibrant-purple');
       if (purpleCard) {
+        console.log('[eval] Found purple card in document', i);
         var numEl = purpleCard.querySelector('[class*="text-3xl"]');
         if (numEl) {
           numEl.textContent = String(total);
           console.log('[eval] Star count updated to:', total);
           return;
+        } else {
+          console.log('[eval] Purple card found but no text-3xl element');
         }
+      } else {
+        console.log('[eval] No purple card in document', i);
       }
     }
+    console.log('[eval] Failed to find purple card in any document');
   }
 
   // 更新"最近评价学生"卡片（bg-vibrant-orange）
@@ -3015,30 +3040,64 @@
     var starStr = '';
     for (var si = 0; si < score; si++) starStr += '\u2605';
     for (var se = score; se < 5; se++) starStr += '\u2606';
+    
+    console.log('[eval] Updating recent eval card:', studentName, score);
+    
+    // 保存到 sessionStorage，以便页面切换后恢复
+    try {
+      sessionStorage.setItem('recentEvalStudent', studentName);
+      sessionStorage.setItem('recentEvalScore', String(score));
+      console.log('[eval] Saved recent eval to sessionStorage');
+    } catch (_) { }
+    
     var docs = [document];
     try {
       var ifrEl = document.getElementById('dynamicIframe');
-      if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+      if (ifrEl && ifrEl.contentDocument) {
+        docs.push(ifrEl.contentDocument);
+        console.log('[eval] Added iframe document to search');
+      }
     } catch (_) { }
     try {
       if (window.parent && window.parent !== window) {
         var pIfr = window.parent.document.getElementById('dynamicIframe');
-        if (pIfr && pIfr.contentDocument) docs.push(pIfr.contentDocument);
+        if (pIfr && pIfr.contentDocument) {
+          docs.push(pIfr.contentDocument);
+          console.log('[eval] Added parent iframe document to search');
+        }
       }
     } catch (_) { }
+    
+    console.log('[eval] Searching in', docs.length, 'documents for orange card');
+    
     for (var i = 0; i < docs.length; i++) {
       var d = docs[i];
       if (!d) continue;
+      console.log('[eval] Searching document', i);
       var orangeCard = d.querySelector('.bg-vibrant-orange');
-      if (!orangeCard) continue;
+      if (!orangeCard) {
+        console.log('[eval] No orange card in document', i);
+        continue;
+      }
+      console.log('[eval] Found orange card in document', i);
       var numEl = orangeCard.querySelector('[class*="text-3xl"]');
-      if (numEl) numEl.textContent = studentName;
+      if (numEl) {
+        numEl.textContent = studentName;
+        console.log('[eval] Updated student name to:', studentName);
+      } else {
+        console.log('[eval] Orange card found but no text-3xl element');
+      }
       // 小字副标题（text-xs 元素）
       var subEl = orangeCard.querySelector('p[class*="text-xs"], div[class*="text-xs"]');
-      if (subEl) subEl.textContent = starStr + ' ' + score + '\u661f\u597d\u8bc4';
-      console.log('[eval] Recent eval card updated:', studentName, score);
+      if (subEl) {
+        subEl.textContent = starStr + ' ' + score + '\u661f\u597d\u8bc4';
+        console.log('[eval] Recent eval card updated:', studentName, score);
+      } else {
+        console.log('[eval] Orange card found but no text-xs element');
+      }
       return;
     }
+    console.log('[eval] Failed to find orange card in any document');
   }
 
   function showEvaluationModal(doc, student, cls) {
@@ -4224,6 +4283,84 @@
 
   // ─── 小组评分功能模块 END ───────────────────────────────────────────
 
+  // ─── 恢复会话数据模块 ───────────────────────────────────────────────
+  
+  // 从 sessionStorage 恢复当堂数据并更新卡片显示
+  function restoreSessionData() {
+    try {
+      // 恢复当堂得星总计
+      var sessionStars = sessionStorage.getItem('sessionStars');
+      if (sessionStars) {
+        var stars = parseInt(sessionStars, 10);
+        if (!isNaN(stars) && stars > 0) {
+          randomCallState.sessionStars = stars;
+          console.log('[session] Restoring session stars:', stars);
+          
+          var docs = [document];
+          try {
+            var ifrEl = document.getElementById('dynamicIframe');
+            if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+          } catch (_) { }
+          
+          for (var i = 0; i < docs.length; i++) {
+            var d = docs[i];
+            if (!d) continue;
+            var purpleCard = d.querySelector('.bg-vibrant-purple');
+            if (purpleCard) {
+              var numEl = purpleCard.querySelector('[class*="text-3xl"]');
+              if (numEl) {
+                numEl.textContent = String(stars);
+                console.log('[session] Star count card restored to:', stars);
+              }
+            }
+          }
+        }
+      }
+      
+      // 恢复最近评价学生
+      var recentStudent = sessionStorage.getItem('recentEvalStudent');
+      var recentScore = sessionStorage.getItem('recentEvalScore');
+      if (recentStudent && recentScore) {
+        var score = parseInt(recentScore, 10);
+        if (!isNaN(score) && score > 0) {
+          console.log('[session] Restoring recent eval:', recentStudent, score);
+          
+          var starStr = '';
+          for (var si = 0; si < score; si++) starStr += '\u2605';
+          for (var se = score; se < 5; se++) starStr += '\u2606';
+          
+          var docs = [document];
+          try {
+            var ifrEl = document.getElementById('dynamicIframe');
+            if (ifrEl && ifrEl.contentDocument) docs.push(ifrEl.contentDocument);
+          } catch (_) { }
+          
+          for (var i = 0; i < docs.length; i++) {
+            var d = docs[i];
+            if (!d) continue;
+            var orangeCard = d.querySelector('.bg-vibrant-orange');
+            if (!orangeCard) continue;
+            var numEl = orangeCard.querySelector('[class*="text-3xl"]');
+            if (numEl) numEl.textContent = recentStudent;
+            var subEl = orangeCard.querySelector('p[class*="text-xs"], div[class*="text-xs"]');
+            if (subEl) subEl.textContent = starStr + ' ' + score + '\u661f\u597d\u8bc4';
+            console.log('[session] Recent eval card restored:', recentStudent, score);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[session] Error restoring session data:', e);
+    }
+  }
+  
+  // 在课堂教学主界面加载时恢复会话数据
+  if (detectTeacherClassroomPage()) {
+    setTimeout(function () { restoreSessionData(); }, 1000);
+    setTimeout(function () { restoreSessionData(); }, 2500);
+  }
+  
+  // ─── 恢复会话数据模块 END ───────────────────────────────────────────
+
   window.sqliteBridge = {
     namespace: NAMESPACE,
     apiBase: API_BASE,
@@ -4231,6 +4368,7 @@
     overrideClassPage: runClassPageOverride,
     overrideDashboardPage: runDashboardOverride,
     overrideTeacherPage: runTeacherPageOverride,
+    showEvaluationModal: showEvaluationModal,
     showGroupEvaluationModal: showGroupEvaluationModal,
     bindGroupEvaluationHandler: bindGroupEvaluationHandler
   };

@@ -344,3 +344,360 @@
 </script></body>
                 </html>
             
+
+<script>
+(function() {
+  'use strict';
+
+  // 获取 iframe 文档
+  function getDoc() {
+    var iframe = document.getElementById('dynamicIframe');
+    return iframe && iframe.contentDocument ? iframe.contentDocument : document;
+  }
+
+  // 获取 API 基础地址
+  function getApiBase() {
+    if (window.__API_BASE__) return window.__API_BASE__;
+    if (location.protocol.startsWith('http') &&
+        location.hostname !== 'localhost' &&
+        location.hostname !== '127.0.0.1' &&
+        location.origin !== 'null') {
+      return location.origin;
+    }
+    return 'http://127.0.0.1:3000';
+  }
+
+  // 获取认证头
+  function getAuthHeader() {
+    var token = localStorage.getItem('token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  }
+
+  var API_BASE = getApiBase();
+  var currentClass = null;
+  var students = [];
+  var sortMode = 'studentNo'; // 'studentNo' 或 'name'
+
+  // 加载班级信息
+  async function loadClassInfo() {
+    var classId = localStorage.getItem('currentClassId');
+    console.log('[student-eval] Loading class with ID:', classId);
+    
+    if (!classId) {
+      console.error('[student-eval] No currentClassId in localStorage');
+      alert('未找到班级信息，请先在课堂教学主界面选择班级');
+      return null;
+    }
+
+    try {
+      var res = await fetch(API_BASE + '/api/classes/' + classId, {
+        headers: getAuthHeader()
+      });
+      console.log('[student-eval] Class API response status:', res.status);
+      
+      if (!res.ok) {
+        console.error('[student-eval] Failed to load class:', res.status);
+        alert('加载班级信息失败，状态码: ' + res.status);
+        return null;
+      }
+      var cls = await res.json();
+      console.log('[student-eval] Loaded class:', cls);
+      return cls;
+    } catch (e) {
+      console.error('[student-eval] Error loading class:', e);
+      alert('加载班级信息出错: ' + e.message);
+      return null;
+    }
+  }
+
+  // 加载学生列表
+  async function loadStudents(classId) {
+    console.log('[student-eval] Loading students for class:', classId);
+    
+    try {
+      var res = await fetch(API_BASE + '/api/classes/' + classId + '/students', {
+        headers: getAuthHeader()
+      });
+      console.log('[student-eval] Students API response status:', res.status);
+      
+      if (!res.ok) {
+        console.error('[student-eval] Failed to load students:', res.status);
+        alert('加载学生列表失败，状态码: ' + res.status);
+        return [];
+      }
+      var list = await res.json();
+      console.log('[student-eval] Loaded students:', list.length, 'students');
+      console.log('[student-eval] Students data:', list);
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      console.error('[student-eval] Error loading students:', e);
+      alert('加载学生列表出错: ' + e.message);
+      return [];
+    }
+  }
+
+  // 排序学生
+  function sortStudents(list, mode) {
+    var sorted = list.slice();
+    if (mode === 'studentNo') {
+      sorted.sort(function(a, b) {
+        var aNo = parseInt(a.studentNo, 10) || 0;
+        var bNo = parseInt(b.studentNo, 10) || 0;
+        return aNo - bNo;
+      });
+    } else if (mode === 'name') {
+      sorted.sort(function(a, b) {
+        var aName = (a.name || '').trim();
+        var bName = (b.name || '').trim();
+        return aName.localeCompare(bName, 'zh-CN');
+      });
+    }
+    return sorted;
+  }
+
+  // 渲染学生卡片
+  function renderStudents() {
+    var doc = getDoc();
+    if (!doc) return;
+
+    // 更新标题和学生数量
+    var titleEl = doc.querySelector('h1.text-4xl');
+    if (titleEl && currentClass) {
+      titleEl.textContent = currentClass.name || '班级';
+    }
+    var countEl = doc.querySelector('span.px-3.py-1.bg-white\\/20');
+    if (countEl) {
+      countEl.textContent = students.length + ' 人';
+    }
+
+    // 获取学生卡片容器
+    var container = doc.querySelector('main .max-w-\\[1800px\\]');
+    if (!container) {
+      console.error('[student-eval] Cannot find student card container');
+      return;
+    }
+
+    // 清空容器
+    container.innerHTML = '';
+
+    if (!students || students.length === 0) {
+      container.innerHTML = 
+        '<div class="h-[60vh] flex flex-col items-center justify-center text-slate-300">' +
+        '<div class="p-10 rounded-full bg-slate-100 mb-6">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide opacity-30">' +
+        '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>' +
+        '<circle cx="9" cy="7" r="4"></circle>' +
+        '<line x1="17" x2="22" y1="8" y2="13"></line>' +
+        '<line x1="22" x2="17" y1="8" y2="13"></line>' +
+        '</svg>' +
+        '</div>' +
+        '<p class="text-2xl font-black tracking-widest uppercase">当前班级暂无学生数据</p>' +
+        '<p class="text-slate-400 mt-2">请在管理后台中导入班级和学生信息</p>' +
+        '</div>';
+      return;
+    }
+
+    // 排序学生
+    var sorted = sortStudents(students, sortMode);
+
+    // 创建学生卡片网格
+    var grid = doc.createElement('div');
+    grid.className = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6';
+
+    sorted.forEach(function(student) {
+      var card = doc.createElement('div');
+      card.className = 'student-eval-card group relative bg-white rounded-2xl p-6 shadow-lg border-2 border-indigo-100 hover:border-indigo-400 hover:shadow-2xl transition-all cursor-pointer hover:scale-105';
+      card.setAttribute('data-student-id', student.id);
+      
+      card.innerHTML = 
+        '<div class="flex flex-col items-center gap-3">' +
+        '<div class="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-black shadow-lg">' +
+        (student.name ? student.name.charAt(0) : '?') +
+        '</div>' +
+        '<div class="text-center">' +
+        '<div class="text-xl font-black text-slate-900">' + (student.name || '未命名') + '</div>' +
+        '<div class="text-sm text-indigo-600 font-semibold mt-1">座号: ' + (student.studentNo || '-') + '</div>' +
+        '</div>' +
+        '<div class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600">' +
+        '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>' +
+        '</svg>' +
+        '</div>' +
+        '</div>';
+
+      grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+
+    // 绑定点击事件
+    bindStudentCardClick();
+  }
+
+  // 绑定学生卡片点击事件
+  function bindStudentCardClick() {
+    var doc = getDoc();
+    if (!doc) return;
+
+    var cards = doc.querySelectorAll('.student-eval-card');
+    cards.forEach(function(card) {
+      card.addEventListener('click', function() {
+        var studentId = parseInt(card.getAttribute('data-student-id'), 10);
+        var student = students.find(function(s) { return s.id === studentId; });
+        if (!student) {
+          console.error('[student-eval] Student not found:', studentId);
+          return;
+        }
+
+        console.log('[student-eval] Opening evaluation modal for:', student.name);
+        console.log('[student-eval] Current class:', currentClass);
+        
+        // 设置全局班级信息，供评价弹窗使用
+        var iframe = document.getElementById('dynamicIframe');
+        var iframeWin = iframe && iframe.contentWindow;
+        
+        // 在 iframe 和当前窗口都设置 __selectedClass__
+        if (iframeWin) {
+          iframeWin.__selectedClass__ = currentClass;
+        }
+        window.__selectedClass__ = currentClass;
+        
+        // 调用 bridge.js 中的 showEvaluationModal 函数
+        // 尝试从 iframe 的 window.sqliteBridge 获取函数
+        if (iframeWin && iframeWin.sqliteBridge && typeof iframeWin.sqliteBridge.showEvaluationModal === 'function') {
+          iframeWin.sqliteBridge.showEvaluationModal(doc, student, currentClass);
+        } 
+        // 尝试从当前 window.sqliteBridge 获取函数
+        else if (window.sqliteBridge && typeof window.sqliteBridge.showEvaluationModal === 'function') {
+          window.sqliteBridge.showEvaluationModal(doc, student, currentClass);
+        } 
+        else {
+          console.error('[student-eval] showEvaluationModal function not found in sqliteBridge');
+        }
+      });
+    });
+  }
+
+  // 绑定排序按钮
+  function bindSortButtons() {
+    var doc = getDoc();
+    if (!doc) return;
+
+    var buttons = doc.querySelectorAll('.bg-white\\/10 button');
+    if (buttons.length < 2) return;
+
+    var btnStudentNo = buttons[0];
+    var btnName = buttons[1];
+
+    function updateButtonStyles() {
+      if (sortMode === 'studentNo') {
+        btnStudentNo.className = 'px-6 py-3 text-sm font-black rounded-xl transition-all flex items-center gap-2 bg-white text-indigo-600 shadow-xl scale-105';
+        btnName.className = 'px-6 py-3 text-sm font-black rounded-xl transition-all flex items-center gap-2 text-white/60 hover:text-white';
+      } else {
+        btnStudentNo.className = 'px-6 py-3 text-sm font-black rounded-xl transition-all flex items-center gap-2 text-white/60 hover:text-white';
+        btnName.className = 'px-6 py-3 text-sm font-black rounded-xl transition-all flex items-center gap-2 bg-white text-indigo-600 shadow-xl scale-105';
+      }
+    }
+
+    btnStudentNo.addEventListener('click', function() {
+      sortMode = 'studentNo';
+      updateButtonStyles();
+      renderStudents();
+    });
+
+    btnName.addEventListener('click', function() {
+      sortMode = 'name';
+      updateButtonStyles();
+      renderStudents();
+    });
+  }
+
+  // 绑定返回按钮
+  function bindBackButtons() {
+    var doc = getDoc();
+    if (!doc) return;
+
+    // 返回按钮（左上角箭头）
+    var backBtn = doc.querySelector('button svg.lucide-arrow-left');
+    if (backBtn) {
+      var btn = backBtn.closest('button');
+      if (btn) {
+        btn.addEventListener('click', function() {
+          window.location.href = '课堂教学主界面.html';
+        });
+      }
+    }
+
+    // 返回课堂按钮
+    var returnBtn = doc.querySelector('button svg.lucide-circle-check');
+    if (returnBtn) {
+      var btn = returnBtn.closest('button');
+      if (btn) {
+        btn.addEventListener('click', function() {
+          window.location.href = '课堂教学主界面.html';
+        });
+      }
+    }
+  }
+
+  // 初始化页面
+  async function init() {
+    console.log('[student-eval] Initializing student evaluation page...');
+
+    // 等待 iframe 加载完成
+    var iframe = document.getElementById('dynamicIframe');
+    if (iframe) {
+      iframe.addEventListener('load', function() {
+        setTimeout(initAfterLoad, 500);
+      });
+    }
+
+    // 如果已经加载，直接初始化
+    if (iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+      setTimeout(initAfterLoad, 500);
+    }
+  }
+
+  async function initAfterLoad() {
+    console.log('[student-eval] Starting initialization...');
+
+    // 加载班级信息
+    currentClass = await loadClassInfo();
+    if (!currentClass) {
+      console.error('[student-eval] Failed to load class info');
+      return;
+    }
+
+    console.log('[student-eval] Current class loaded:', currentClass);
+
+    // 设置全局班级信息
+    var iframe = document.getElementById('dynamicIframe');
+    var iframeWin = iframe && iframe.contentWindow;
+    if (iframeWin) {
+      iframeWin.__selectedClass__ = currentClass;
+    }
+    window.__selectedClass__ = currentClass;
+
+    // 加载学生列表
+    students = await loadStudents(currentClass.id);
+
+    // 渲染学生卡片
+    renderStudents();
+
+    // 绑定排序按钮
+    bindSortButtons();
+
+    // 绑定返回按钮
+    bindBackButtons();
+
+    console.log('[student-eval] Initialization complete');
+  }
+
+  // 页面加载完成后初始化
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>

@@ -583,6 +583,15 @@
             if (matched) {
               console.log('匹配到班级:', matched.name, 'ID:', matched.id);
               localStorage.setItem('currentClassId', matched.id.toString());
+              
+              // 设置全局 __selectedClass__ 对象，供评价弹窗使用
+              const iframe = document.getElementById('dynamicIframe');
+              if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.__selectedClass__ = matched;
+                console.log('已设置 iframe.__selectedClass__:', matched);
+              }
+              window.__selectedClass__ = matched;
+              console.log('已设置 window.__selectedClass__:', matched);
             }
           }
         } catch (error) {
@@ -592,6 +601,35 @@
 
       // 启动班级选择监听
       setTimeout(monitorClassSelection, 1000);
+      
+      // 页面加载时，如果已有 currentClassId，则加载班级信息并设置 __selectedClass__
+      async function initializeSelectedClass() {
+        const classId = localStorage.getItem('currentClassId');
+        if (classId) {
+          try {
+            const response = await fetch('/api/classes/' + classId, {
+              credentials: 'include'
+            });
+            
+            if (response.ok) {
+              const cls = await response.json();
+              console.log('初始化已选班级:', cls);
+              
+              // 设置全局 __selectedClass__ 对象
+              const iframe = document.getElementById('dynamicIframe');
+              if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.__selectedClass__ = cls;
+              }
+              window.__selectedClass__ = cls;
+              console.log('已初始化 __selectedClass__:', cls);
+            }
+          } catch (error) {
+            console.error('初始化班级失败:', error);
+          }
+        }
+      }
+      
+      setTimeout(initializeSelectedClass, 1500);
     })();
   </script>
   <script>

@@ -238,6 +238,20 @@ export default async function dataRoutes(fastify) {
     return db.prepare('SELECT id, name, grade, created_at as createdAt FROM classes ORDER BY id').all();
   });
 
+  fastify.get('/api/classes/:id', async (request, reply) => {
+    const classId = Number(request.params.id);
+    if (!Number.isInteger(classId) || classId <= 0) {
+      return reply.code(400).send({ error: 'INVALID_CLASS_ID' });
+    }
+
+    const cls = db.prepare('SELECT id, name, grade, created_at as createdAt FROM classes WHERE id = ?').get(classId);
+    if (!cls) {
+      return reply.code(404).send({ error: 'CLASS_NOT_FOUND' });
+    }
+
+    return cls;
+  });
+
   fastify.post('/api/classes', async (request, reply) => {
     const parsed = createClassSchema.safeParse(request.body || {});
     if (!parsed.success) {
