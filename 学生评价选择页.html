@@ -623,6 +623,11 @@
       var btn = backBtn.closest('button');
       if (btn) {
         btn.addEventListener('click', function() {
+          // 设置标记，表示是从学生评价选择页返回
+          try {
+            sessionStorage.setItem('returningFromEvalPage', 'true');
+            sessionStorage.setItem('lastPageLoadTime', String(Date.now()));
+          } catch (_) { }
           window.location.href = '课堂教学主界面.html';
         });
       }
@@ -634,6 +639,11 @@
       var btn = returnBtn.closest('button');
       if (btn) {
         btn.addEventListener('click', function() {
+          // 设置标记，表示是从学生评价选择页返回
+          try {
+            sessionStorage.setItem('returningFromEvalPage', 'true');
+            sessionStorage.setItem('lastPageLoadTime', String(Date.now()));
+          } catch (_) { }
           window.location.href = '课堂教学主界面.html';
         });
       }

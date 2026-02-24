@@ -633,6 +633,45 @@
     })();
   </script>
   <script>
+    // 阻止手动评价按钮的默认跳转行为
+    (function() {
+      function preventManualEvalNavigation() {
+        const iframe = document.getElementById('dynamicIframe');
+        const doc = iframe && iframe.contentDocument ? iframe.contentDocument : document;
+        
+        if (!doc) return;
+        
+        const buttons = doc.querySelectorAll('button');
+        buttons.forEach(function(btn) {
+          const text = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+          
+          if (text.indexOf('手动') >= 0 && text.indexOf('评价') >= 0) {
+            console.log('[prevent-nav] Found manual evaluation button, removing onclick');
+            
+            // 移除 onclick 属性
+            btn.removeAttribute('onclick');
+            
+            // 检查是否被 <a> 标签包裹
+            const parentLink = btn.closest('a');
+            if (parentLink) {
+              console.log('[prevent-nav] Button is wrapped in <a> tag, preventing default');
+              parentLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+              }, true);
+            }
+          }
+        });
+      }
+      
+      // 多次尝试，确保在页面完全加载后执行
+      setTimeout(preventManualEvalNavigation, 500);
+      setTimeout(preventManualEvalNavigation, 1000);
+      setTimeout(preventManualEvalNavigation, 2000);
+    })();
+  </script>
+  <script>
     // Teacher Statistics Tracker
     (function() {
       const API_BASE = window.location.origin;

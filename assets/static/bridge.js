@@ -4283,10 +4283,284 @@
 
   // ─── 小组评分功能模块 END ───────────────────────────────────────────
 
+  // ─── 手动评价功能模块 ───────────────────────────────────────────────
+  
+  // 显示学生选择弹窗
+  function showStudentSelectionModal(doc, students, cls) {
+    if (!doc) doc = document;
+    
+    // 移除已存在的弹窗
+    var existing = doc.getElementById('bridge-student-select-modal');
+    if (existing) existing.remove();
+
+    var overlay = doc.createElement('div');
+    overlay.id = 'bridge-student-select-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);'
+      + 'display:flex;align-items:center;justify-content:center;z-index:999999;animation:bridgeFadeIn .25s ease;';
+
+    // 添加样式
+    if (!doc.getElementById('bridge-student-select-style')) {
+      var styleEl = doc.createElement('style');
+      styleEl.id = 'bridge-student-select-style';
+      styleEl.textContent = [
+        '#bridge-student-select-modal .bcard{background:#fff;border-radius:1.5rem;padding:2rem;max-width:1000px;width:90%;',
+        'box-shadow:0 25px 50px -12px rgba(0,0,0,.25);animation:bridgeSlideUp .3s ease;max-height:80vh;overflow-y:auto;}',
+        '#bridge-student-select-modal h2{margin:0 0 .5rem;font-size:1.5rem;font-weight:800;color:#1e1b4b;text-align:center;}',
+        '#bridge-student-select-modal .subtitle{text-align:center;color:#6366f1;font-weight:600;font-size:.9rem;margin-bottom:1.5rem;}',
+        '#bridge-student-select-modal .search-box{margin-bottom:1.5rem;}',
+        '#bridge-student-select-modal .search-input{width:100%;padding:.75rem 1rem;border:2px solid #e2e8f0;border-radius:.75rem;',
+        'font-size:.95rem;outline:none;transition:border-color .2s;}',
+        '#bridge-student-select-modal .search-input:focus{border-color:#6366f1;}',
+        '#bridge-student-select-modal .students-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem;max-height:50vh;overflow-y:auto;}',
+        '#bridge-student-select-modal .student-card{background:#f8fafc;border:2px solid #e2e8f0;border-radius:1rem;padding:1rem;cursor:pointer;',
+        'transition:all .2s;text-align:center;display:flex;flex-direction:column;align-items:center;gap:.5rem;}',
+        '#bridge-student-select-modal .student-card:hover{border-color:#6366f1;background:#eef2ff;transform:translateY(-2px);box-shadow:0 4px 12px rgba(99,102,241,.2);}',
+        '#bridge-student-select-modal .student-avatar{width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);',
+        'display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.5rem;font-weight:700;}',
+        '#bridge-student-select-modal .student-name{font-size:1rem;font-weight:700;color:#334155;}',
+        '#bridge-student-select-modal .student-no{font-size:.8rem;color:#64748b;}',
+        '#bridge-student-select-modal .close-btn{width:100%;padding:.75rem;border-radius:.85rem;font-size:.95rem;font-weight:700;',
+        'cursor:pointer;border:none;background:#f1f5f9;color:#64748b;transition:all .15s;}',
+        '#bridge-student-select-modal .close-btn:hover{background:#e2e8f0;}'
+      ].join('');
+      doc.head.appendChild(styleEl);
+    }
+
+    // 构建学生卡片
+    console.log('[manual-eval] Building student cards, total:', students.length);
+    var studentsHtml = '';
+    
+    for (var i = 0; i < students.length; i++) {
+      var student = students[i];
+      var initial = student.name ? student.name.charAt(0) : '?';
+      
+      studentsHtml += '<div class="student-card" data-student-id="' + student.id + '">'
+        + '<div class="student-avatar">' + initial + '</div>'
+        + '<div class="student-name">' + (student.name || '未命名') + '</div>'
+        + '<div class="student-no">座号: ' + (student.studentNo || '-') + '</div>'
+        + '</div>';
+    }
+
+    overlay.innerHTML = '<div class="bcard">'
+      + '<h2>📝 手动评价学生</h2>'
+      + '<div class="subtitle">请选择要评价的学生</div>'
+      + '<div class="search-box">'
+      + '<input type="text" class="search-input" id="student-search" placeholder="搜索学生姓名或座号...">'
+      + '</div>'
+      + '<div class="students-grid" id="students-grid">' + studentsHtml + '</div>'
+      + '<button class="close-btn" id="student-select-close">取消</button>'
+      + '</div>';
+
+    doc.body.appendChild(overlay);
+
+    function closeModal() {
+      overlay.style.animation = 'bridgeFadeIn .2s ease reverse';
+      setTimeout(function () { if (overlay.parentNode) overlay.remove(); }, 200);
+    }
+
+    // 点击遮罩层关闭
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    // 关闭按钮
+    var closeBtn = doc.getElementById('student-select-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        closeModal();
+      });
+    }
+
+    // 搜索功能
+    var searchInput = doc.getElementById('student-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', function () {
+        var keyword = searchInput.value.toLowerCase().trim();
+        var cards = doc.querySelectorAll('#students-grid .student-card');
+        
+        cards.forEach(function (card) {
+          var name = card.querySelector('.student-name').textContent.toLowerCase();
+          var no = card.querySelector('.student-no').textContent.toLowerCase();
+          
+          if (name.indexOf(keyword) >= 0 || no.indexOf(keyword) >= 0) {
+            card.style.display = 'flex';
+          } else {
+            card.style.display = 'none';
+          }
+        });
+      });
+    }
+
+    // 学生卡片点击事件
+    var studentCards = doc.querySelectorAll('#students-grid .student-card');
+    studentCards.forEach(function (card) {
+      card.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var studentId = parseInt(card.getAttribute('data-student-id'), 10);
+        var student = students.find(function (s) { return s.id === studentId; });
+        
+        if (student) {
+          console.log('[manual-eval] Student card clicked:', student.name);
+          closeModal();
+          setTimeout(function () {
+            showEvaluationModal(doc, student, cls);
+          }, 250);
+        }
+      });
+    });
+  }
+
+  // 绑定手动评价按钮
+  function bindManualEvaluationHandler() {
+    console.log('[manual-eval] Binding manual evaluation handler');
+    
+    var docs = [document];
+    try {
+      var iframe = document.getElementById('dynamicIframe');
+      if (iframe && iframe.contentDocument) {
+        docs.push(iframe.contentDocument);
+      }
+    } catch (_) { }
+
+    console.log('[manual-eval] Checking', docs.length, 'documents');
+
+    for (var d = 0; d < docs.length; d++) {
+      var doc = docs[d];
+      if (!doc) continue;
+
+      var buttons = doc.querySelectorAll('button');
+      console.log('[manual-eval] Found', buttons.length, 'buttons in document', d);
+
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var text = (btn.innerText || btn.textContent || '').replace(/\s+/g, '');
+        
+        if (text.indexOf('手动') >= 0 && text.indexOf('评价') >= 0) {
+          console.log('[manual-eval] Found manual evaluation button:', text);
+          
+          if (btn.getAttribute('data-manual-eval-bound') === '1') {
+            console.log('[manual-eval] Button already bound, skipping');
+            continue;
+          }
+          btn.setAttribute('data-manual-eval-bound', '1');
+
+          // 使用捕获阶段来确保我们的处理器先执行
+          btn.addEventListener('click', async function (event) {
+            console.log('[manual-eval] Manual evaluation button clicked');
+            
+            // 阻止默认行为和事件冒泡
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            
+            // 获取当前班级
+            var cls = window.__selectedClass__;
+            if (!cls || !cls.id) {
+              console.warn('[manual-eval] No class selected');
+              alert('请先选择班级');
+              return false;
+            }
+            
+            console.log('[manual-eval] Current class:', cls);
+            
+            // 加载学生列表
+            try {
+              var res = await fetch(API_BASE + '/api/classes/' + cls.id + '/students', {
+                headers: getAuthHeader()
+              });
+              
+              if (!res.ok) {
+                console.error('[manual-eval] Failed to load students:', res.status);
+                alert('加载学生列表失败');
+                return false;
+              }
+              
+              var students = await res.json();
+              console.log('[manual-eval] Loaded students:', students.length);
+              
+              if (!students || students.length === 0) {
+                alert('当前班级没有学生');
+                return false;
+              }
+              
+              // 按座号排序
+              students.sort(function (a, b) {
+                var aNo = parseInt(a.studentNo, 10) || 0;
+                var bNo = parseInt(b.studentNo, 10) || 0;
+                return aNo - bNo;
+              });
+              
+              // 显示学生选择弹窗
+              showStudentSelectionModal(doc, students, cls);
+              
+            } catch (e) {
+              console.error('[manual-eval] Error loading students:', e);
+              alert('加载学生列表失败');
+            }
+            
+            return false;
+          }, true); // 使用捕获阶段
+          
+          console.log('[manual-eval] Button bound successfully');
+        }
+      }
+    }
+  }
+
+  // 初始化手动评价功能
+  setTimeout(function () { bindManualEvaluationHandler(); }, 1500);
+  setTimeout(function () { bindManualEvaluationHandler(); }, 3000);
+  setTimeout(function () { bindManualEvaluationHandler(); }, 4500);
+
+  // ─── 手动评价功能模块 END ───────────────────────────────────────────
+
   // ─── 恢复会话数据模块 ───────────────────────────────────────────────
   
   // 从 sessionStorage 恢复当堂数据并更新卡片显示
   function restoreSessionData() {
+    // 只在课堂教学主界面才检查是否应该恢复数据
+    if (!detectTeacherClassroomPage()) {
+      console.log('[session] Not on classroom page, skipping restore check');
+      return;
+    }
+    
+    // 检查是否是从学生评价选择页返回
+    var returningFromEvalPage = sessionStorage.getItem('returningFromEvalPage');
+    if (returningFromEvalPage === 'true') {
+      console.log('[session] Returning from eval page, will restore data');
+      sessionStorage.removeItem('returningFromEvalPage');
+      // 继续执行恢复逻辑
+    } else {
+      // 检查是否应该恢复数据（页面导航 vs 刷新）
+      try {
+        var lastPageLoad = sessionStorage.getItem('lastPageLoadTime');
+        var currentTime = Date.now();
+        
+        if (lastPageLoad) {
+          var timeDiff = currentTime - parseInt(lastPageLoad, 10);
+          if (timeDiff < 5000) {
+            console.log('[session] Detected page navigation, will restore data');
+            sessionStorage.setItem('lastPageLoadTime', String(currentTime));
+          } else {
+            console.log('[session] Detected page refresh, clearing data');
+            sessionStorage.removeItem('sessionStars');
+            sessionStorage.removeItem('recentEvalStudent');
+            sessionStorage.removeItem('recentEvalScore');
+            sessionStorage.setItem('lastPageLoadTime', String(currentTime));
+            return;
+          }
+        } else {
+          console.log('[session] First load, clearing data');
+          sessionStorage.setItem('lastPageLoadTime', String(currentTime));
+          return;
+        }
+      } catch (e) {
+        console.error('[session] Error checking session:', e);
+        return;
+      }
+    }
+    
     try {
       // 恢复当堂得星总计
       var sessionStars = sessionStorage.getItem('sessionStars');
