@@ -3257,6 +3257,12 @@
             setTimeout(function() {
               updateGroupHighScoreCardSession();
             }, 300);
+            // 更新排行榜
+            setTimeout(function() {
+              if (window.updateRankings) {
+                window.updateRankings();
+              }
+            }, 500);
             setTimeout(closeModal, 900);
           } else {
             submitBtn.textContent = '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5';
@@ -3557,11 +3563,100 @@
   var TAGS_POS = ['积极发言', '回答正确', '思路清晰', '认真听讲', '学习努力'];
   var TAGS_NEG = ['需要加油', '注意力分散', '参与不够', '常类展示', '尚需练习'];
 
-  // 当堂小组得分状态（只统计本次课堂的评价）
+  // 当堂小组得分状态（按班级分别存储，使用 sessionStorage）
   var groupSessionState = {
     studentScores: {}, // 学生ID -> 当堂得分
     groupScores: {}    // 小组编号 -> 当堂总分
   };
+  
+  // 从 sessionStorage 加载指定班级的当堂数据
+  function loadSessionDataForClass(classId) {
+    if (!classId) return;
+    
+    try {
+      var key = 'session_data_class_' + classId;
+      var data = sessionStorage.getItem(key);
+      
+      if (data) {
+        var parsed = JSON.parse(data);
+        groupSessionState.studentScores = parsed.studentScores || {};
+        groupSessionState.groupScores = parsed.groupScores || {};
+        console.log('[session-state] 加载班级', classId, '的当堂数据:', 
+          Object.keys(groupSessionState.studentScores).length, '个学生,',
+          Object.keys(groupSessionState.groupScores).length, '个小组');
+      } else {
+        // 没有数据，初始化为空
+        groupSessionState.studentScores = {};
+        groupSessionState.groupScores = {};
+        console.log('[session-state] 班级', classId, '没有当堂数据，初始化为空');
+      }
+    } catch (e) {
+      console.error('[session-state] 加载数据失败:', e);
+      groupSessionState.studentScores = {};
+      groupSessionState.groupScores = {};
+    }
+  }
+  
+  // 保存当前班级的当堂数据到 sessionStorage
+  function saveSessionDataForClass(classId) {
+    if (!classId) return;
+    
+    try {
+      var key = 'session_data_class_' + classId;
+      var data = {
+        studentScores: groupSessionState.studentScores,
+        groupScores: groupSessionState.groupScores,
+        savedAt: new Date().toISOString()
+      };
+      sessionStorage.setItem(key, JSON.stringify(data));
+      console.log('[session-state] 保存班级', classId, '的当堂数据');
+    } catch (e) {
+      console.error('[session-state] 保存数据失败:', e);
+    }
+  }
+  
+  // 监听班级切换，自动切换数据
+  (function() {
+    var lastClassId = localStorage.getItem('currentClassId');
+    
+    // 页面加载时，加载当前班级的数据
+    if (lastClassId) {
+      console.log('[session-state] 页面加载，恢复班级', lastClassId, '的当堂数据');
+      loadSessionDataForClass(lastClassId);
+    }
+    
+    // 定期检查班级是否切换
+    setInterval(function() {
+      var currentClassId = localStorage.getItem('currentClassId');
+      
+      if (currentClassId && currentClassId !== lastClassId) {
+        console.log('[session-state] 检测到班级切换:', lastClassId, '->', currentClassId);
+        
+        // 保存旧班级的数据
+        if (lastClassId) {
+          saveSessionDataForClass(lastClassId);
+        }
+        
+        // 加载新班级的数据
+        loadSessionDataForClass(currentClassId);
+        lastClassId = currentClassId;
+        
+        // 立即刷新排行榜
+        if (typeof updateRankings === 'function') {
+          setTimeout(updateRankings, 100);
+        }
+      }
+    }, 500); // 每500ms检查一次
+    
+    // 页面卸载前，保存当前班级的数据
+    window.addEventListener('beforeunload', function() {
+      var currentClassId = localStorage.getItem('currentClassId');
+      if (currentClassId) {
+        saveSessionDataForClass(currentClassId);
+        console.log('[session-state] 页面卸载，保存班级', currentClassId, '的数据');
+      }
+    });
+  })();
 
   // 记录学生的当堂评价分数
   function recordStudentSessionScore(studentId, score) {
@@ -3570,6 +3665,12 @@
     }
     groupSessionState.studentScores[studentId] += score;
     console.log('[group-score] Student', studentId, 'session score updated to:', groupSessionState.studentScores[studentId]);
+    
+    // 立即保存到 sessionStorage
+    var currentClassId = localStorage.getItem('currentClassId');
+    if (currentClassId) {
+      saveSessionDataForClass(currentClassId);
+    }
   }
 
   // 更新小组最高分卡片（只统计当堂数据）
@@ -3589,6 +3690,9 @@
           return;
         }
 
+        // 清空旧的小组分数数据（重新计算）
+        groupSessionState.groupScores = {};
+        
         // 使用当堂评价数据计算小组得分
         var groupScores = {};
         for (var groupNum = 1; groupNum <= 8; groupNum++) {
@@ -3613,9 +3717,16 @@
               memberCount: members.length,
               avgScore: members.length > 0 ? Math.round(totalScore / members.length * 10) / 10 : 0
             };
-            groupSessionState.groupScores[groupNum] = totalScore;
+            // 保存到 groupSessionState，供排行榜使用
+            groupSessionState.groupScores[groupNum] = {
+              score: totalScore,
+              memberCount: members.length
+            };
           }
         }
+
+        // 保存到 sessionStorage
+        saveSessionDataForClass(currentClassId);
 
         // 找出当堂得分最高的小组
         var maxScore = 0;
@@ -3805,16 +3916,16 @@
         submitBtn.textContent = '提交中...';
         submitBtn.disabled = true;
         
+        // 先记录每个成员的当堂得分（在提交前记录，确保数据可用）
+        for (var i = 0; i < groupMembers.length; i++) {
+          recordStudentSessionScore(groupMembers[i].id, selectedScore);
+        }
+        
         // 为小组中的每个成员提交评价
         submitGroupEvaluation(clsId, groupMembers, selectedScore, selectedTags.slice(), comment).then(function (result) {
           if (result.success) {
             submitBtn.textContent = '✓ 评价成功';
             submitBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
-            
-            // 记录每个成员的当堂得分
-            for (var i = 0; i < groupMembers.length; i++) {
-              recordStudentSessionScore(groupMembers[i].id, selectedScore);
-            }
             
             // 更新当堂得星总计卡片
             var totalStars = selectedScore * groupMembers.length;
@@ -3827,6 +3938,13 @@
             setTimeout(function() {
               updateGroupHighScoreCardSession();
             }, 500);
+            
+            // 更新排行榜
+            setTimeout(function() {
+              if (window.updateRankings) {
+                window.updateRankings();
+              }
+            }, 700);
             
             setTimeout(closeModal, 900);
           } else {
@@ -4514,6 +4632,313 @@
   setTimeout(function () { bindManualEvaluationHandler(); }, 4500);
 
   // ─── 手动评价功能模块 END ───────────────────────────────────────────
+
+  // ─── 排行榜更新模块 ───────────────────────────────────────────────
+  
+  // 更新个人星级榜（只显示当堂数据）
+  async function updatePersonalRanking() {
+    if (!detectTeacherClassroomPage()) return;
+    
+    var cls = window.__selectedClass__;
+    if (!cls || !cls.id) {
+      console.log('[ranking] No class selected, skipping personal ranking update');
+      return;
+    }
+    
+    console.log('[ranking] Updating personal ranking for class:', cls.id);
+    
+    try {
+      // 从 groupSessionState.studentScores 获取当堂数据
+      var studentScores = groupSessionState.studentScores || {};
+      console.log('[ranking] Current session student scores:', studentScores);
+      
+      // 加载当前班级的学生列表，用于过滤
+      var res = await fetch(API_BASE + '/api/classes/' + cls.id + '/students', {
+        headers: getAuthHeader()
+      });
+      
+      if (!res.ok) {
+        console.error('[ranking] Failed to load students:', res.status);
+        return;
+      }
+      
+      var classStudents = await res.json();
+      console.log('[ranking] Class students:', classStudents.length);
+      
+      // 创建当前班级学生ID的集合
+      var classStudentIds = {};
+      for (var i = 0; i < classStudents.length; i++) {
+        classStudentIds[classStudents[i].id] = classStudents[i];
+      }
+      
+      // 转换为数组并只包含当前班级的学生
+      var scoreArray = [];
+      var studentIds = Object.keys(studentScores);
+      
+      for (var i = 0; i < studentIds.length; i++) {
+        var studentId = parseInt(studentIds[i], 10);
+        var score = studentScores[studentId] || 0;
+        
+        // 只包含当前班级的学生
+        if (score > 0 && classStudentIds[studentId]) {
+          scoreArray.push({
+            studentId: studentId,
+            name: classStudentIds[studentId].name,
+            score: score
+          });
+        }
+      }
+      
+      // 按分数降序排序
+      scoreArray.sort(function (a, b) {
+        return b.score - a.score;
+      });
+      
+      // 只取前5名
+      var top5 = scoreArray.slice(0, 5);
+      
+      console.log('[ranking] Top 5 students in current class:', top5);
+      
+      // 查找个人星级榜容器
+      var docs = [document];
+      try {
+        var iframe = document.getElementById('dynamicIframe');
+        if (iframe && iframe.contentDocument) docs.push(iframe.contentDocument);
+      } catch (_) { }
+      
+      for (var d = 0; d < docs.length; d++) {
+        var doc = docs[d];
+        if (!doc) continue;
+        
+        // 查找包含"个人星级榜"的标题
+        var titles = doc.querySelectorAll('h3, h2, div');
+        for (var i = 0; i < titles.length; i++) {
+          var titleText = (titles[i].innerText || titles[i].textContent || '').trim();
+          if (titleText === '个人星级榜') {
+            console.log('[ranking] Found personal ranking panel');
+            
+            // 找到榜单容器（通常是标题的父元素或兄弟元素）
+            var panel = titles[i].closest('div[class*="h-full"]') || titles[i].parentElement;
+            if (!panel) continue;
+            
+            // 查找榜单列表容器
+            var listContainer = panel.querySelector('div[class*="space-y"]') || panel.querySelector('ul') || panel.querySelector('ol');
+            if (!listContainer) {
+              // 如果没有找到，创建一个
+              listContainer = doc.createElement('div');
+              listContainer.className = 'space-y-2 p-4';
+              panel.appendChild(listContainer);
+            }
+            
+            // 清空现有内容
+            listContainer.innerHTML = '';
+            
+            // 添加排名项
+            if (top5.length === 0) {
+              listContainer.innerHTML = '<div class="text-center text-slate-400 py-8">暂无当堂评价数据</div>';
+            } else {
+              for (var j = 0; j < top5.length; j++) {
+                var student = top5[j];
+                var rank = j + 1;
+                var medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+                
+                var item = doc.createElement('div');
+                item.className = 'flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors';
+                item.innerHTML = 
+                  '<div class="flex items-center gap-3">' +
+                  '<div class="text-lg font-bold text-slate-600 w-8">' + medal + '</div>' +
+                  '<div>' +
+                  '<div class="font-semibold text-slate-900">' + (student.name || '未命名') + '</div>' +
+                  '<div class="text-xs text-slate-500">当堂表现</div>' +
+                  '</div>' +
+                  '</div>' +
+                  '<div class="text-xl font-bold text-amber-500">⭐ ' + student.score + '</div>';
+                
+                listContainer.appendChild(item);
+              }
+            }
+            
+            console.log('[ranking] Personal ranking updated with', top5.length, 'students');
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[ranking] Error updating personal ranking:', e);
+    }
+  }
+  
+  // 更新小组积分榜（只显示当堂数据）
+  function updateGroupRanking() {
+    if (!detectTeacherClassroomPage()) return;
+    
+    var cls = window.__selectedClass__;
+    if (!cls || !cls.id) {
+      console.log('[ranking] No class selected, skipping group ranking update');
+      return;
+    }
+    
+    console.log('[ranking] ========== Updating group ranking for class:', cls.id, cls.name, '==========');
+    
+    try {
+      // 从 groupSessionState.groupScores 获取当堂小组数据
+      var groupScores = groupSessionState.groupScores || {};
+      console.log('[ranking] Current session group scores:', JSON.stringify(groupScores));
+      console.log('[ranking] Group scores keys:', Object.keys(groupScores));
+      
+      // 转换为数组
+      var groupArray = [];
+      var groupNums = Object.keys(groupScores);
+      
+      console.log('[ranking] Group numbers found:', groupNums);
+      
+      for (var i = 0; i < groupNums.length; i++) {
+        var groupNum = parseInt(groupNums[i], 10);
+        var groupData = groupScores[groupNum];
+        
+        console.log('[ranking] Processing group', groupNum, 'data:', groupData);
+        
+        if (groupData && groupData.score > 0) {
+          groupArray.push({
+            groupNum: groupNum,
+            memberCount: groupData.memberCount || 0,
+            totalScore: groupData.score || 0
+          });
+        }
+      }
+      
+      // 按总分降序排序
+      groupArray.sort(function (a, b) {
+        return b.totalScore - a.totalScore;
+      });
+      
+      // 只取前5名
+      var top5 = groupArray.slice(0, 5);
+      
+      console.log('[ranking] Top 5 groups:', top5);
+      console.log('[ranking] Will show', top5.length === 0 ? 'EMPTY STATE' : top5.length + ' groups');
+      
+      // 查找小组积分榜容器
+      var docs = [document];
+      try {
+        var iframe = document.getElementById('dynamicIframe');
+        if (iframe && iframe.contentDocument) {
+          docs.push(iframe.contentDocument);
+          console.log('[ranking] Added iframe document to search');
+        }
+      } catch (e) {
+        console.error('[ranking] Error accessing iframe:', e);
+      }
+      
+      var foundPanel = false;
+      
+      for (var d = 0; d < docs.length; d++) {
+        var doc = docs[d];
+        if (!doc) continue;
+        
+        console.log('[ranking] Searching in document', d);
+        
+        // 查找包含"小组积分榜"的标题
+        var titles = doc.querySelectorAll('h3, h2, div');
+        console.log('[ranking] Found', titles.length, 'potential title elements');
+        
+        for (var i = 0; i < titles.length; i++) {
+          var titleText = (titles[i].innerText || titles[i].textContent || '').trim();
+          if (titleText === '小组积分榜') {
+            console.log('[ranking] ✓ Found group ranking panel at index', i);
+            foundPanel = true;
+            
+            // 找到榜单容器
+            var panel = titles[i].closest('div[class*="h-full"]') || titles[i].parentElement;
+            if (!panel) {
+              console.error('[ranking] ✗ Could not find panel container');
+              continue;
+            }
+            
+            console.log('[ranking] ✓ Found panel container');
+            
+            // 查找榜单列表容器
+            var listContainer = panel.querySelector('div[class*="space-y"]') || panel.querySelector('ul') || panel.querySelector('ol');
+            if (!listContainer) {
+              console.log('[ranking] Creating new list container');
+              listContainer = doc.createElement('div');
+              listContainer.className = 'space-y-2 p-4';
+              panel.appendChild(listContainer);
+            }
+            
+            console.log('[ranking] ✓ Found/created list container');
+            
+            // 清空现有内容
+            var oldContent = listContainer.innerHTML;
+            listContainer.innerHTML = '';
+            console.log('[ranking] Cleared old content (was:', oldContent.substring(0, 50), '...)');
+            
+            // 添加排名项
+            if (top5.length === 0) {
+              console.log('[ranking] ✓ Showing EMPTY STATE');
+              listContainer.innerHTML = '<div class="text-center text-slate-400 py-8">暂无当堂分组数据</div>';
+            } else {
+              console.log('[ranking] ✓ Rendering', top5.length, 'groups');
+              for (var j = 0; j < top5.length; j++) {
+                var group = top5[j];
+                var rank = j + 1;
+                var medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+                var avgScore = group.memberCount > 0 ? Math.round(group.totalScore / group.memberCount * 10) / 10 : 0;
+                
+                var item = doc.createElement('div');
+                item.className = 'flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 hover:border-indigo-300 transition-colors';
+                item.innerHTML = 
+                  '<div class="flex items-center gap-3">' +
+                  '<div class="text-lg font-bold text-slate-600 w-8">' + medal + '</div>' +
+                  '<div>' +
+                  '<div class="font-semibold text-slate-900">第 ' + group.groupNum + ' 组</div>' +
+                  '<div class="text-xs text-slate-500">' + group.memberCount + ' 名成员 · 平均 ' + avgScore + ' 星</div>' +
+                  '</div>' +
+                  '</div>' +
+                  '<div class="text-xl font-bold text-indigo-500">⭐ ' + group.totalScore + '</div>';
+                
+                listContainer.appendChild(item);
+                console.log('[ranking]   Added group', group.groupNum, 'with score', group.totalScore);
+              }
+            }
+            
+            console.log('[ranking] ✓✓✓ Group ranking updated successfully ✓✓✓');
+            break;
+          }
+        }
+        
+        if (foundPanel) break;
+      }
+      
+      if (!foundPanel) {
+        console.error('[ranking] ✗✗✗ Could not find group ranking panel ✗✗✗');
+      }
+    } catch (e) {
+      console.error('[ranking] ✗✗✗ Error updating group ranking:', e);
+    }
+  }
+
+  // 更新个人星级榜（只显示当堂数据）  }
+  
+  // 初始化排行榜（延迟加载，等待班级选择）
+  if (detectTeacherClassroomPage()) {
+    setTimeout(function () { updatePersonalRanking(); updateGroupRanking(); }, 3000);
+    setTimeout(function () { updatePersonalRanking(); updateGroupRanking(); }, 5000);
+    
+    // 每10秒自动刷新一次（更频繁，因为是当堂数据）
+    setInterval(function () {
+      updatePersonalRanking();
+      updateGroupRanking();
+    }, 10000);
+  }
+  
+  // 将更新函数暴露给全局，以便评价成功后调用
+  window.updateRankings = function () {
+    updatePersonalRanking();
+    updateGroupRanking();
+  };
+  
+  // ─── 排行榜更新模块 END ───────────────────────────────────────────
 
   // ─── 恢复会话数据模块 ───────────────────────────────────────────────
   
