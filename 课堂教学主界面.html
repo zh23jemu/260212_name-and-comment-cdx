@@ -745,6 +745,7 @@
       let sessionStartTime = Date.now();
       let timerInterval = null;
       let statsUpdateInterval = null;
+      let persistInterval = null;
       let currentStats = {
         login_count: 0,
         cumulative_duration: 0,
@@ -766,6 +767,25 @@
         return iframe && iframe.contentDocument ? iframe.contentDocument : null;
       }
 
+      function getAuthTokenSafe() {
+        try {
+          const token = localStorage.getItem('token');
+          if (token) return token;
+        } catch (_) {}
+        try {
+          if (window.parent && window.parent !== window) {
+            const parentToken = window.parent.localStorage.getItem('token');
+            if (parentToken) return parentToken;
+          }
+        } catch (_) {}
+        return '';
+      }
+
+      function getAuthHeaders() {
+        const token = getAuthTokenSafe();
+        return token ? { 'Authorization': `Bearer ${token}` } : {};
+      }
+
       // Fetch user statistics from backend
       async function fetchUserStats() {
         try {
@@ -774,8 +794,8 @@
           // Fetch teacher statistics from database
           console.log('[Stats] Fetching from /api/statistics/teacher...');
           const teacherStatsResponse = await fetch(`${API_BASE}/api/statistics/teacher`, {
+            headers: getAuthHeaders(),
             credentials: 'include' // Important: include cookies
-          });
           });
 
           let teacherStats = {
@@ -788,31 +808,12 @@
             console.log('[Stats] Teacher stats fetched successfully:', teacherStats);
           } else {
             console.warn('[Stats] Teacher stats request failed:', teacherStatsResponse.status, teacherStatsResponse.statusText);
-            
-            // If unauthorized, clear session and redirect to login
-            if (teacherStatsResponse.status === 401) {
-              console.warn('[Stats] Session expired or invalid, redirecting to login...');
-              
-              // Clear session on server
-              await fetch(`${API_BASE}/api/auth/logout`, {
-                method: 'POST',
-                credentials: 'include'
-              });
-              
-              // Show alert and redirect after a short delay
-              setTimeout(() => {
-                if (confirm('登录已过期，请重新登录')) {
-                  window.location.href = '/教师登录页.html';
-                }
-              }, 1000);
-              return currentStats;
-            }
           }
 
           // Fetch session statistics from kv store
           const kvResponse = await fetch(`${API_BASE}/api/kv/snapshot?namespace=teacher_stats_session`, {
+            headers: getAuthHeaders(),
             credentials: 'include'
-          });
           });
 
           let kvStats = {
@@ -937,10 +938,9 @@
       // Save statistics to backend (only session stats, not evaluation stats)
       async function saveUserStats(stats) {
         try {
-          const token = getAuthToken();
+          const token = getAuthTokenSafe();
           if (!token) return;
-
-          const namespace = `teacher_stats_${token.slice(0, 8)}`;
+          const namespace = 'teacher_stats_session';
           
           // Only save login_count and cumulative_duration to kv store
           // evaluation_count and stars_given come from database
@@ -970,6 +970,8 @@
 
       // Track login
       async function trackLogin() {
+        // Reset current session start time so "登录时长" only counts this login.
+        sessionStartTime = Date.now();
         const stats = await fetchUserStats();
         currentStats = {
           login_count: stats.login_count + 1,
@@ -987,7 +989,11 @@
       // Track logout
       async function trackLogout() {
         const sessionDuration = Math.floor((Date.now() - sessionStartTime) / 1000);
-        currentStats.cumulative_duration += sessionDuration;
+        if (sessionDuration > 0) {
+          currentStats.cumulative_duration += sessionDuration;
+          // Reset baseline to avoid double counting on repeated flushes.
+          sessionStartTime = Date.now();
+        }
         await saveUserStats(currentStats);
       }
 
@@ -1025,6 +1031,11 @@
           updateAllStats();
         }, 1000);
 
+        // Persist cumulative duration periodically so refresh/close won't lose time.
+        persistInterval = setInterval(() => {
+          trackLogout();
+        }, 10000);
+
         // Refresh evaluation stats every 5 seconds from database
         setInterval(async () => {
           const stats = await fetchUserStats();
@@ -1035,6 +1046,14 @@
         // Save on unload
         window.addEventListener('beforeunload', () => {
           trackLogout();
+        });
+        window.addEventListener('pagehide', () => {
+          trackLogout();
+        });
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) {
+            trackLogout();
+          }
         });
       }
 
